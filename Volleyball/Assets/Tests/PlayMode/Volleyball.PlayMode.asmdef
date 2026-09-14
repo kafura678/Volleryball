@@ -1,0 +1,1 @@
+{"name":"Volleyball.PlayMode","references":["Volleyball.Runtime","Unity.InputSystem","Unity.ugui"],"optionalUnityReferences":["TestAssemblies"]}
