@@ -6,16 +6,14 @@ namespace Volleyball
     {
         public MatchController Match;
         GameObject marker;
+        Material markerMaterial;
 
         void Start()
         {
-            marker=GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            marker.name="ServeTargetMarker";
-            marker.transform.localScale=new Vector3(0.55f,0.008f,0.55f);
-            Destroy(marker.GetComponent<Collider>());
-            var material=new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            material.color=new Color(1f,0.18f,0.65f);
-            marker.GetComponent<Renderer>().material=material;
+            marker = MarkerVisualFactory.CreateDisc("ServeTargetMarker");
+            marker.transform.localScale = new Vector3(0.55f, 1f, 0.55f);
+            markerMaterial = MarkerVisualFactory.CreateMaterial(Match, new Color(1f, 0.18f, 0.65f));
+            MarkerVisualFactory.SetMaterial(marker, markerMaterial);
             marker.SetActive(false);
         }
 
@@ -33,7 +31,8 @@ namespace Volleyball
 
         void OnDestroy()
         {
-            if(marker) Destroy(marker);
+            MarkerVisualFactory.DestroyVisual(marker);
+            if (markerMaterial) Destroy(markerMaterial);
         }
     }
 }

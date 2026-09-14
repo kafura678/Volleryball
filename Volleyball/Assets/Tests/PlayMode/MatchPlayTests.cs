@@ -145,6 +145,9 @@ namespace Volleyball.Tests
             var marker=GameObject.Find("ServeTargetMarker");
             Assert.NotNull(marker);
             Assert.True(marker.activeSelf);
+            Assert.IsNull(marker.GetComponent<Collider>(),"Target marker must not create a runtime physics collider");
+            Assert.NotNull(marker.GetComponent<MeshFilter>().sharedMesh);
+            Assert.NotNull(marker.GetComponent<Renderer>().sharedMaterial);
             Vector3 expected=ServeMechanics.TargetForInput(new Vector2(10,10),TeamId.Human,match.Settings);
             Assert.Less(Vector2.Distance(new Vector2(marker.transform.position.x,marker.transform.position.z),new Vector2(expected.x,expected.z)),0.01f);
             Capture("/tmp/volleyball-serve-target.png");
@@ -319,6 +322,10 @@ namespace Volleyball.Tests
             var charge=GameObject.Find("AttackChargeIndicator");
             Assert.NotNull(marker);Assert.True(marker.activeSelf);
             Assert.NotNull(charge);Assert.True(charge.activeSelf);
+            Assert.IsNull(marker.GetComponent<Collider>());
+            Assert.IsNull(charge.GetComponent<Collider>());
+            Assert.NotNull(marker.GetComponent<Renderer>().sharedMaterial);
+            Assert.NotNull(charge.GetComponent<Renderer>().sharedMaterial);
             Vector3 expected=AttackMechanics.TargetForInput(aim,TeamId.Human,match.Settings);
             Assert.Less(Vector2.Distance(new Vector2(marker.transform.position.x,marker.transform.position.z),new Vector2(expected.x,expected.z)),0.01f);
             Capture("/tmp/volleyball-attack-target.png");
