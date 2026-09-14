@@ -59,6 +59,11 @@ namespace Volleyball
         [Min(0.1f)] public float attackTargetMargin = 0.55f;
         [Range(0,1)] public float attackGoodAimStrength = 0.84f;
         [Range(0,1)] public float attackMovementMultiplier = 0f;
+        [Header("Mobile controls")]
+        [Range(0,0.95f)] public float mobileJoystickDeadZone = 0.15f;
+        [Min(0)] public float mobileSwipeDeadZone = 24f;
+        [Min(1)] public float mobileSwipeFullScale = 140f;
+        public bool showMobileControlsInEditor = true;
         [Header("CPU")]
         [Min(0.02f)] public float cpuReaction = 0.12f;
         [Min(0.1f)] public float cpuServeDelay = 0.9f;

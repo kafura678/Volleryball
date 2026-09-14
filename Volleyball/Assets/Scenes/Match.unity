@@ -6254,6 +6254,8 @@ GameObject:
   - component: {fileID: 2136522217}
   - component: {fileID: 2136522215}
   - component: {fileID: 2136522216}
+  - component: {fileID: 2136522219}
+  - component: {fileID: 2136522218}
   m_Layer: 0
   m_Name: MatchRoot
   m_TagString: Untagged
@@ -6309,6 +6311,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2136522218
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2136522214}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b7417171c6da4474853361daef3838a, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Volleyball.Runtime::Volleyball.MobileControlsInstaller
+  Match: {fileID: 2136522215}
+  Input: {fileID: 2136522219}
+  ShowMobileControlsInEditor: 1
+--- !u!114 &2136522219
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2136522214}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f568b6efebbc43b38b879405390e9ac, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Volleyball.Runtime::Volleyball.MobileInputController
+  Character: {fileID: 1754808107}
+  Match: {fileID: 2136522215}
+  ViewCamera: {fileID: 1907193697}
+  Settings: {fileID: 11400000, guid: d58d94e515bad407187f3b113f10c698, type: 2}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

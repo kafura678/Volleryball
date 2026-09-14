@@ -98,6 +98,47 @@ namespace Volleyball.Tests
             }
             Object.DestroyImmediate(settings);
         }
+        [Test] public void MobileJoystick_DeadZoneAndLargeInput_ReturnZeroAndClampedVector()
+        {
+            Assert.AreEqual(Vector2.zero,MobileInputMath.ApplyRadialDeadZone(new Vector2(0.1f,0),0.15f));
+            Vector2 value=MobileInputMath.ApplyRadialDeadZone(new Vector2(4,3),0.15f);
+            Assert.That(value.magnitude,Is.EqualTo(1).Within(0.001f));
+            Assert.Greater(value.x,0);Assert.Greater(value.y,0);
+        }
+        [Test] public void MobileJoystick_LocalCenterEdgesAndDiagonal_ReturnExpectedDirections()
+        {
+            var rect=new Rect(0,0,220,220);
+            Assert.AreEqual(Vector2.zero,MobileVirtualJoystick.NormalizedInput(rect,rect.center));
+            Assert.That(MobileVirtualJoystick.NormalizedInput(rect,new Vector2(rect.xMax,rect.center.y)).x,Is.EqualTo(1).Within(0.001f));
+            Assert.That(MobileVirtualJoystick.NormalizedInput(rect,new Vector2(rect.xMin,rect.center.y)).x,Is.EqualTo(-1).Within(0.001f));
+            Assert.That(MobileVirtualJoystick.NormalizedInput(rect,new Vector2(rect.center.x,rect.yMax)).y,Is.EqualTo(1).Within(0.001f));
+            Assert.That(MobileVirtualJoystick.NormalizedInput(rect,new Vector2(rect.center.x,rect.yMin)).y,Is.EqualTo(-1).Within(0.001f));
+            Vector2 diagonal=MobileVirtualJoystick.NormalizedInput(rect,new Vector2(rect.xMax,rect.yMax));
+            Assert.Greater(diagonal.x,0);Assert.Greater(diagonal.y,0);
+            Assert.That(diagonal.magnitude,Is.EqualTo(1).Within(0.001f));
+        }
+        [Test] public void MobileSwipe_DeadZoneDirectionAndScale_ReturnExpectedAim()
+        {
+            Vector2 start=new Vector2(100,100);
+            Assert.AreEqual(Vector2.zero,MobileInputMath.SwipeAim(start,start+new Vector2(10,0),24,140));
+            Vector2 right=MobileInputMath.SwipeAim(start,start+new Vector2(200,0),24,140);
+            Vector2 deep=MobileInputMath.SwipeAim(start,start+new Vector2(0,200),24,140);
+            Assert.Less(Vector2.Distance(right,Vector2.right),0.001f);
+            Assert.Less(Vector2.Distance(deep,Vector2.up),0.001f);
+            Assert.LessOrEqual(right.magnitude,1);
+        }
+        [Test] public void SafeArea_LandscapeNotch_NormalizesAndClampsAnchors()
+        {
+            Rect normalized=SafeAreaFitter.Normalize(new Rect(80,20,2440,1060),new Vector2Int(2532,1170));
+            Assert.That(normalized.xMin,Is.EqualTo(80f/2532f).Within(0.0001f));
+            Assert.That(normalized.yMin,Is.EqualTo(20f/1170f).Within(0.0001f));
+            Assert.That(normalized.xMax,Is.EqualTo(2520f/2532f).Within(0.0001f));
+            Assert.That(normalized.yMax,Is.EqualTo(1080f/1170f).Within(0.0001f));
+
+            Rect invalid=SafeAreaFitter.Normalize(new Rect(-50,-20,2000,1000),Vector2Int.zero);
+            Assert.AreEqual(Vector2.zero,invalid.min);
+            Assert.AreEqual(Vector2.one,invalid.max);
+        }
         [Test] public void Clamp_EitherSide_KeepsAthleteInside() { var g=new GameObject(); var c=g.AddComponent<CourtDefinition>(); c.Settings=ScriptableObject.CreateInstance<PrototypeSettings>(); foreach(TeamId t in new[]{TeamId.Human,TeamId.Cpu}) {var p=c.Clamp(new Vector3(100,0,100),t); Assert.LessOrEqual(Mathf.Abs(p.x),3.6f); Assert.True(c.OnSide(p,t));} Object.DestroyImmediate(c.Settings); Object.DestroyImmediate(g); }
         static MatchRules Started() {var r=new MatchRules(5);r.Prepare();r.Serve(TeamId.Human);return r;}
     }
