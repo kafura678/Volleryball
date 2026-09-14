@@ -1,1 +1,12 @@
-{"name":"Volleyball.PlayMode","references":["Volleyball.Runtime","Unity.InputSystem","Unity.ugui"],"optionalUnityReferences":["TestAssemblies"]}
+{
+  "name": "Volleyball.PlayMode",
+  "references": [
+    "Volleyball.Runtime",
+    "Unity.InputSystem",
+    "Unity.ugui",
+    "Unity.Netcode.Runtime"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

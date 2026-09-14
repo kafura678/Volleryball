@@ -1,1 +1,11 @@
-{"name":"Volleyball.Runtime","references":["Unity.InputSystem","Unity.ugui"]}
+{
+  "name": "Volleyball.Runtime",
+  "references": [
+    "Unity.InputSystem",
+    "Unity.ugui",
+    "Unity.Netcode.Runtime",
+    "Unity.Services.Core",
+    "Unity.Services.Authentication",
+    "Unity.Services.Multiplayer"
+  ]
+}
