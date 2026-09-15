@@ -11,6 +11,10 @@ namespace Volleyball
         public VolleyballActions Actions { get; private set; }
         public TeamId Team => Motor.Team;
         public Vector2 AimInput { get; private set; }
+        public IVolleyballCommandSink CommandSink { get; set; }
+        public ServeStage CurrentServeStage => CommandSink?.CurrentServeStage ?? Actions.CurrentServeStage;
+        public AttackStage CurrentAttackStage => CommandSink?.CurrentAttackStage ?? Actions.CurrentAttackStage;
+        public float CurrentAttackCharge => CommandSink?.CurrentAttackCharge ?? Actions.ChargeAmount;
 
         void Awake()
         {
@@ -19,6 +23,16 @@ namespace Volleyball
         }
 
         public void Move(Vector3 direction)
+        {
+            if (CommandSink != null)
+            {
+                CommandSink.Move(direction);
+                return;
+            }
+            ApplyMove(direction);
+        }
+
+        public void ApplyMove(Vector3 direction)
         {
             float multiplier = Actions != null && Actions.IsAttackJumpActive
                 ? Actions.Settings.attackMovementMultiplier
@@ -29,28 +43,64 @@ namespace Volleyball
         public void Aim(Vector2 input)
         {
             AimInput = Vector2.ClampMagnitude(input, 1f);
+            if (CommandSink != null)
+            {
+                CommandSink.Aim(AimInput);
+                return;
+            }
+            ApplyAim(input);
+        }
+
+        public void ApplyAim(Vector2 input)
+        {
+            AimInput = Vector2.ClampMagnitude(input, 1f);
         }
 
         public bool RequestAction(ActionType action)
         {
-            return Actions.Request(action);
+            return CommandSink != null ? CommandSink.RequestAction(action) : ApplyAction(action);
         }
+
+        public bool ApplyAction(ActionType action) => Actions.Request(action);
 
         public bool AttackStarted(Vector2 aimDirection)
         {
-            Aim(aimDirection);
+            AimInput = Vector2.ClampMagnitude(aimDirection, 1f);
+            return CommandSink != null
+                ? CommandSink.AttackStarted(AimInput)
+                : ApplyAttackStarted(aimDirection);
+        }
+
+        public bool ApplyAttackStarted(Vector2 aimDirection)
+        {
+            ApplyAim(aimDirection);
             return Actions.BeginAttack(AimInput);
         }
 
         public void AttackHeld(Vector2 aimDirection)
         {
-            Aim(aimDirection);
+            AimInput = Vector2.ClampMagnitude(aimDirection, 1f);
+            if (CommandSink != null) CommandSink.AttackHeld(AimInput);
+            else ApplyAttackHeld(aimDirection);
+        }
+
+        public void ApplyAttackHeld(Vector2 aimDirection)
+        {
+            ApplyAim(aimDirection);
             Actions.HoldAttack(AimInput);
         }
 
         public bool AttackReleased(Vector2 aimDirection)
         {
-            Aim(aimDirection);
+            AimInput = Vector2.ClampMagnitude(aimDirection, 1f);
+            return CommandSink != null
+                ? CommandSink.AttackReleased(AimInput)
+                : ApplyAttackReleased(aimDirection);
+        }
+
+        public bool ApplyAttackReleased(Vector2 aimDirection)
+        {
+            ApplyAim(aimDirection);
             return Actions.ReleaseAttack(AimInput);
         }
 

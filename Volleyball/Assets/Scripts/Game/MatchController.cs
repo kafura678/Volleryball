@@ -10,6 +10,7 @@ namespace Volleyball
         public VolleyballCharacterController Human;
         public VolleyballCharacterController Cpu;
         public MatchRules Rules { get; private set; }
+        public bool HasMatchAuthority { get; private set; } = true;
         public event Action Changed;
         float transitionAt;
         public string LastMessage { get; private set; } = "";
@@ -30,7 +31,7 @@ namespace Volleyball
         void OnDestroy() {if(Ball) {Ball.Landed-=OnLanded;Ball.Faulted-=OnFault;}}
         void Update()
         {
-            if(Rules == null) return;
+            if(!HasMatchAuthority || Rules == null) return;
             if(Rules.State==MatchState.PointFinished && Time.time>=transitionAt) PrepareRally();
         }
         void PrepareRally()
@@ -44,7 +45,7 @@ namespace Volleyball
         }
         public bool ResetServePreparation(TeamId team)
         {
-            if(Rules==null || Rules.State!=MatchState.ServePreparation || Rules.Server!=team) return false;
+            if(!HasMatchAuthority || Rules==null || Rules.State!=MatchState.ServePreparation || Rules.Server!=team) return false;
             var server=team==TeamId.Human?Human:Cpu;
             Ball.Hold(server.transform.position+new Vector3(0,1.5f,CourtDefinition.Direction(team)*0.7f));
             LastMessage=team==TeamId.Human?"Toss expired - SPACE / B to retry":"CPU preparing serve";
@@ -53,18 +54,18 @@ namespace Volleyball
         }
         public bool TryStartServe(TeamId team)
         {
-            if(Rules==null || !Rules.Serve(team)) return false;
+            if(!HasMatchAuthority || Rules==null || !Rules.Serve(team)) return false;
             LastMessage="Rally"; Changed?.Invoke();return true;
         }
         void OnLanded(Vector3 point)
         {
-            if(Rules==null) return;
+            if(!HasMatchAuthority || Rules==null) return;
             var winner=Rules.LandingWinner(point,Settings.halfWidth,Settings.halfLength);
             FinishPoint(winner);
         }
         void OnFault()
         {
-            if(Rules!=null) FinishPoint(MatchRules.Opponent(Rules.LastTouch));
+            if(HasMatchAuthority && Rules!=null) FinishPoint(MatchRules.Opponent(Rules.LastTouch));
         }
         void FinishPoint(TeamId winner)
         {
@@ -76,8 +77,51 @@ namespace Volleyball
         }
         public void Restart()
         {
-            if(Rules==null) return;
+            if(!HasMatchAuthority || Rules==null) return;
             Rules.Reset(); PrepareRally();
+        }
+        public void SetNetworkAuthority(bool authoritative)
+        {
+            HasMatchAuthority=authoritative;
+        }
+        public void PauseOnline(string message)
+        {
+            if(!HasMatchAuthority || Rules==null) return;
+            Rules.Wait();
+            Human.CancelActions(); Cpu.CancelActions();
+            Ball.Hold(Ball.transform.position);
+            LastMessage=message;
+            Changed?.Invoke();
+        }
+        public void BeginOnlineMatch()
+        {
+            if(!HasMatchAuthority || Rules==null) return;
+            Rules.Reset();
+            PrepareRally();
+        }
+        public MatchNetworkState CaptureNetworkState()
+        {
+            bool winner=Rules!=null && Rules.HasWinner;
+            return new MatchNetworkState
+            {
+                State=Rules?.State??MatchState.Waiting,
+                Server=Rules?.Server??TeamId.Human,
+                LastTouch=Rules?.LastTouch??TeamId.Human,
+                TouchCount=Rules?.TouchCount??0,
+                TeamAScore=Rules?.HumanScore??0,
+                TeamBScore=Rules?.CpuScore??0,
+                TargetScore=Rules?.TargetScore??Settings.winningScore,
+                HasWinner=winner,
+                Winner=winner?Rules.Winner:TeamId.Human,
+                Message=new Unity.Collections.FixedString128Bytes(LastMessage??string.Empty)
+            };
+        }
+        public void ApplyNetworkState(MatchNetworkState snapshot)
+        {
+            if(HasMatchAuthority || Rules==null) return;
+            Rules.Synchronize(snapshot);
+            LastMessage=snapshot.Message.ToString();
+            Changed?.Invoke();
         }
         public void NotifyHit(TeamId team,ActionType action)
         {

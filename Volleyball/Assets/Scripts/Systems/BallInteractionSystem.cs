@@ -17,7 +17,7 @@ namespace Volleyball
         {
             var rules=Match.Rules;
             if(rules==null || rules.State!=MatchState.ServePreparation ||
-                rules.Server!=actor.Team || actor.Team!=TeamId.Human || Ball.IsLive ||
+                rules.Server!=actor.Team || !actor.GetComponent<VolleyballActions>().UsePlayerServeControls || Ball.IsLive ||
                 Vector3.Distance(actor.transform.position,Ball.Body.position)>3)
             {
                 return false;
@@ -39,16 +39,16 @@ namespace Volleyball
                 if(rules.State!=MatchState.ServePreparation || actor.Team!=rules.Server ||
                     new Vector2(serveOffset.x,serveOffset.z).magnitude>3) return false;
                 var actions=actor.GetComponent<VolleyballActions>();
-                ServeTimingGrade grade=actor.Team==TeamId.Human?actions.PendingServeGrade:ServeTimingGrade.Perfect;
-                if(actor.Team==TeamId.Human && (actions.CurrentServeStage!=ServeStage.StrikeQueued || !Ball.IsLive || grade==ServeTimingGrade.None)) return false;
+                ServeTimingGrade grade=actions.UsePlayerServeControls?actions.PendingServeGrade:ServeTimingGrade.Perfect;
+                if(actions.UsePlayerServeControls && (actions.CurrentServeStage!=ServeStage.StrikeQueued || !Ball.IsLive || grade==ServeTimingGrade.None)) return false;
                 if(!Match.TryStartServe(actor.Team)) return false;
                 nextContactAt=Time.time+Settings.hitCooldown;
-                Vector2 aim=actor.Team==TeamId.Human?actions.ServeAimInput:Vector2.zero;
+                Vector2 aim=actions.UsePlayerServeControls?actions.ServeAimInput:Vector2.zero;
                 Vector3 serveTarget=ServeMechanics.TargetForInput(aim,actor.Team,Settings,grade);
                 LastServeTarget=serveTarget;
                 LastServeGrade=grade;
                 Ball.Launch(ServeMechanics.Velocity(position,serveTarget,grade,Settings));
-                if(actor.Team==TeamId.Human) Match.NotifyServeStrike(grade); else Match.NotifyHit(actor.Team,action);
+                if(actions.UsePlayerServeControls) Match.NotifyServeStrike(grade); else Match.NotifyHit(actor.Team,action);
                 return true;
             }
             if(rules.State!=MatchState.Playing || !Ball.IsLive || Time.time<nextContactAt || !Court.OnSide(position,actor.Team)) return false;

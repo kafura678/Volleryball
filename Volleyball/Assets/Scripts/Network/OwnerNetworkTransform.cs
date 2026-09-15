@@ -6,7 +6,7 @@ namespace Volleyball
     {
         protected override bool OnIsServerAuthoritative()
         {
-            return false;
+            return true;
         }
     }
 }

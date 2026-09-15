@@ -18,7 +18,9 @@ namespace Volleyball
         public int TouchCount { get; private set; }
         public int HumanScore { get; private set; }
         public int CpuScore { get; private set; }
-        public int TargetScore { get; }
+        public int TargetScore { get; private set; }
+        public bool HasWinner => State == MatchState.MatchFinished;
+        public TeamId Winner => HumanScore >= TargetScore ? TeamId.Human : TeamId.Cpu;
         public static TeamId Opponent(TeamId team) => team == TeamId.Human ? TeamId.Cpu : TeamId.Human;
         public MatchRules(int target) { TargetScore = Math.Max(1, target); Reset(); }
         public void Reset()
@@ -26,6 +28,21 @@ namespace Volleyball
             HumanScore = CpuScore = TouchCount = 0;
             Server = LastTouch = TeamId.Human;
             State = MatchState.Waiting;
+        }
+        public void Wait()
+        {
+            TouchCount = 0;
+            State = MatchState.Waiting;
+        }
+        public void Synchronize(MatchNetworkState snapshot)
+        {
+            State = snapshot.State;
+            Server = snapshot.Server;
+            LastTouch = snapshot.LastTouch;
+            TouchCount = snapshot.TouchCount;
+            HumanScore = snapshot.TeamAScore;
+            CpuScore = snapshot.TeamBScore;
+            TargetScore = Math.Max(1, snapshot.TargetScore);
         }
         public bool Prepare()
         {

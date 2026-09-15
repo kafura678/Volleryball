@@ -5754,6 +5754,7 @@ MonoBehaviour:
   CpuController: {fileID: 364463472}
   DesktopInput: {fileID: 1754808108}
   MobileInput: {fileID: 2136522219}
+  MatchSynchronizerPrefab: {fileID: 1428522882099158620, guid: 5ab5ecdba47f44be98ce74153c7029ee, type: 3}
 --- !u!114 &1914857137
 MonoBehaviour:
   m_ObjectHideFlags: 0

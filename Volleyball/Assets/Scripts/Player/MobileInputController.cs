@@ -139,12 +139,12 @@ namespace Volleyball
         {
             if (!Character || !Match || Match.Rules == null ||
                 Match.Rules.State != MatchState.ServePreparation ||
-                Match.Rules.Server != TeamId.Human)
+                Match.Rules.Server != Character.Team)
             {
                 return false;
             }
 
-            ServeStage stage = Character.Actions.CurrentServeStage;
+            ServeStage stage = Character.CurrentServeStage;
             if (stage == ServeStage.Ready) return Character.RequestAction(ActionType.Serve);
             return stage == ServeStage.Tossed;
         }

@@ -12,14 +12,16 @@ namespace Volleyball.Editor
     {
         const string ScenePath = "Assets/Scenes/Match.unity";
         const string PlayerPrefabPath = "Assets/Prefabs/OnlineNetworkPlayer.prefab";
+        const string MatchSynchronizerPrefabPath = "Assets/Prefabs/OnlineMatchSynchronizer.prefab";
         const string PrefabListPath = "Assets/DefaultNetworkPrefabs.asset";
 
         [MenuItem("Volleyball/Configure Online Checkpoint 1")]
         public static void Configure()
         {
             GameObject playerPrefab = CreateOrUpdatePlayerPrefab();
-            NetworkPrefabsList prefabList = RegisterNetworkPrefab(playerPrefab);
-            ConfigureScene(playerPrefab, prefabList);
+            OnlineMatchSynchronizer synchronizerPrefab = CreateOrUpdateMatchSynchronizerPrefab();
+            NetworkPrefabsList prefabList = RegisterNetworkPrefabs(playerPrefab, synchronizerPrefab.gameObject);
+            ConfigureScene(playerPrefab, synchronizerPrefab, prefabList);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("Online Checkpoint 1 scene and network prefab configured.");
@@ -45,7 +47,18 @@ namespace Volleyball.Editor
             return prefab;
         }
 
-        static NetworkPrefabsList RegisterNetworkPrefab(GameObject playerPrefab)
+        static OnlineMatchSynchronizer CreateOrUpdateMatchSynchronizerPrefab()
+        {
+            GameObject root = new GameObject("OnlineMatchSynchronizer");
+            root.AddComponent<NetworkObject>();
+            root.AddComponent<OnlineMatchSynchronizer>();
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, MatchSynchronizerPrefabPath);
+            Object.DestroyImmediate(root);
+            if (!prefab) throw new System.InvalidOperationException("Failed to create OnlineMatchSynchronizer prefab.");
+            return prefab.GetComponent<OnlineMatchSynchronizer>();
+        }
+
+        static NetworkPrefabsList RegisterNetworkPrefabs(params GameObject[] prefabs)
         {
             NetworkPrefabsList list = AssetDatabase.LoadAssetAtPath<NetworkPrefabsList>(PrefabListPath);
             if (!list)
@@ -54,19 +67,20 @@ namespace Volleyball.Editor
                 AssetDatabase.CreateAsset(list, PrefabListPath);
             }
 
-            if (!list.Contains(playerPrefab))
+            foreach (GameObject prefab in prefabs)
             {
+                if (list.Contains(prefab)) continue;
                 list.Add(new NetworkPrefab
                 {
                     Override = NetworkPrefabOverride.None,
-                    Prefab = playerPrefab
+                    Prefab = prefab
                 });
                 EditorUtility.SetDirty(list);
             }
             return list;
         }
 
-        static void ConfigureScene(GameObject playerPrefab, NetworkPrefabsList prefabList)
+        static void ConfigureScene(GameObject playerPrefab, OnlineMatchSynchronizer synchronizerPrefab, NetworkPrefabsList prefabList)
         {
             Scene scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
             MatchController match = Object.FindFirstObjectByType<MatchController>();
@@ -97,6 +111,7 @@ namespace Volleyball.Editor
             controller.CpuController = match.Cpu.GetComponent<CpuController>();
             controller.DesktopInput = match.Human.GetComponent<PlayerInputController>();
             controller.MobileInput = Object.FindFirstObjectByType<MobileInputController>();
+            controller.MatchSynchronizerPrefab = synchronizerPrefab;
 
             OnlineMenuInstaller menu = GetOrAdd<OnlineMenuInstaller>(match.gameObject);
             menu.Controller = controller;

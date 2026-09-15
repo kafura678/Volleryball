@@ -45,6 +45,13 @@ namespace Volleyball
             MoveDirection = Vector3.zero; jumpTime = -1; JumpOffset = 0;
             transform.rotation = Quaternion.LookRotation(Vector3.forward * CourtDefinition.Direction(Team));
         }
+        public void ApplyNetworkPose(Vector3 position, Quaternion rotation)
+        {
+            body = body ? body : GetComponent<CharacterController>();
+            body.enabled = false;
+            transform.SetPositionAndRotation(position, rotation);
+            body.enabled = true;
+        }
         public void Face(Vector3 target)
         {
             Vector3 d=target-transform.position; d.y=0;

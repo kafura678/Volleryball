@@ -13,10 +13,13 @@ namespace Volleyball
         public CpuController CpuController;
         public PlayerInputController DesktopInput;
         public MobileInputController MobileInput;
+        public OnlineMatchSynchronizer MatchSynchronizerPrefab;
 
         OnlineSessionFlow flow;
         IOnlineSessionGateway gateway;
         OnlineNetworkPlayer localNetworkPlayer;
+        OnlineMatchSynchronizer activeMatchSynchronizer;
+        string matchStatusOverride;
         TeamId originalHumanTeam = TeamId.Human;
         bool hasOriginalTeam;
 
@@ -24,7 +27,9 @@ namespace Volleyball
         public event Action Changed;
         public OnlineMode Mode => flow?.Mode ?? OnlineMode.Offline;
         public OnlineConnectionState State => flow?.State ?? OnlineConnectionState.Offline;
-        public string Status => flow?.Status ?? "Offline CPU Match";
+        public string Status => string.IsNullOrEmpty(matchStatusOverride)
+            ? flow?.Status ?? "Offline CPU Match"
+            : matchStatusOverride;
         public string JoinCode => flow?.JoinCode ?? string.Empty;
         public bool IsBusy => flow != null && flow.IsBusy;
         public bool HasLocalNetworkPlayer => localNetworkPlayer != null;
@@ -96,6 +101,7 @@ namespace Volleyball
 
             if (!online)
             {
+                matchStatusOverride = string.Empty;
                 localNetworkPlayer = null;
                 RestoreOfflinePlayer();
                 SetLocalInputEnabled(true);
@@ -111,10 +117,14 @@ namespace Volleyball
             if (!CpuController && Match && Match.Cpu)
                 CpuController = Match.Cpu.GetComponent<CpuController>();
             if (CpuController) CpuController.enabled = available;
-            if (Match && Match.Cpu) Match.Cpu.gameObject.SetActive(available);
+            if (Match && Match.Cpu)
+            {
+                bool keepAuthoritativeRemotePlayer = !available && NetworkManager && NetworkManager.IsServer;
+                Match.Cpu.gameObject.SetActive(available || keepAuthoritativeRemotePlayer);
+            }
         }
 
-        void ConfigureLocalOnlineSide()
+        void ConfigureLocalOnlineSide(TeamId? assignedTeam = null)
         {
             if (!Match || !Match.Human || Match.Human.Motor == null) return;
             if (!hasOriginalTeam)
@@ -123,7 +133,7 @@ namespace Volleyball
                 hasOriginalTeam = true;
             }
 
-            TeamId side = Mode == OnlineMode.Client ? TeamId.Cpu : TeamId.Human;
+            TeamId side = assignedTeam ?? (Mode == OnlineMode.Client ? TeamId.Cpu : TeamId.Human);
             Match.Human.Motor.Team = side;
             if (Match.Court) Match.Human.ResetForRally(Match.Court.Spawn(side));
         }
@@ -131,6 +141,7 @@ namespace Volleyball
         void RestoreOfflinePlayer()
         {
             if (!Match || !Match.Human || Match.Human.Motor == null) return;
+            Match.Human.CommandSink = null;
             Match.Human.Motor.Team = hasOriginalTeam ? originalHumanTeam : TeamId.Human;
             if (Match.Rules != null) Match.Restart();
         }
@@ -141,21 +152,35 @@ namespace Volleyball
             if (MobileInput) MobileInput.enabled = enabled;
         }
 
-        public Transform RegisterLocalNetworkPlayer(OnlineNetworkPlayer player)
+        public VolleyballCharacterController RegisterLocalNetworkPlayer(OnlineNetworkPlayer player)
         {
             if (!player || !player.IsOwner) return null;
             localNetworkPlayer = player;
-            ConfigureLocalOnlineSide();
+            ConfigureLocalOnlineSide(player.Team);
+            if (Match && Match.Human) Match.Human.CommandSink = player;
             SetLocalInputEnabled(true);
             Changed?.Invoke();
-            return Match && Match.Human ? Match.Human.transform : null;
+            return Match && Match.Human ? Match.Human : null;
         }
 
         public void UnregisterLocalNetworkPlayer(OnlineNetworkPlayer player)
         {
             if (localNetworkPlayer != player) return;
+            if (Match && Match.Human && ReferenceEquals(Match.Human.CommandSink, player)) Match.Human.CommandSink = null;
             localNetworkPlayer = null;
             if (Mode != OnlineMode.Offline) SetLocalInputEnabled(false);
+            Changed?.Invoke();
+        }
+
+        public VolleyballCharacterController GetAuthoritativeAvatar(TeamId team)
+        {
+            if (!Match) return null;
+            return team == TeamId.Human ? Match.Human : Match.Cpu;
+        }
+
+        public void NotifyMatchStatus(string status)
+        {
+            matchStatusOverride = status ?? string.Empty;
             Changed?.Invoke();
         }
 
@@ -179,7 +204,15 @@ namespace Volleyball
 
         void OnClientConnected(ulong clientId)
         {
+            EnsureMatchSynchronizer();
             Changed?.Invoke();
+        }
+
+        void EnsureMatchSynchronizer()
+        {
+            if (!NetworkManager || !NetworkManager.IsServer || activeMatchSynchronizer || !MatchSynchronizerPrefab) return;
+            activeMatchSynchronizer = Instantiate(MatchSynchronizerPrefab);
+            activeMatchSynchronizer.GetComponent<NetworkObject>().Spawn();
         }
 
         void OnClientDisconnected(ulong clientId)

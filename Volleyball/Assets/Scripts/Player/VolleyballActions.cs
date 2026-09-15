@@ -34,10 +34,12 @@ namespace Volleyball
         public bool IsAttackInProgress => CurrentAttackStage != AttackStage.Ready;
         public bool IsAttackJumpActive { get; private set; }
         public int SuccessfulHits { get; private set; }
+        public bool UsePlayerServeControls { get; set; }
 
         void Awake()
         {
             motor = GetComponent<CharacterMotor>();
+            UsePlayerServeControls = motor.Team == TeamId.Human;
         }
 
         public bool Request(ActionType action)
@@ -51,7 +53,7 @@ namespace Volleyball
 
             if (!CanBegin(action)) return false;
             bool serve = action == ActionType.Serve;
-            if (serve && motor.Team == TeamId.Human)
+            if (serve && UsePlayerServeControls)
             {
                 if (CurrentServeStage == ServeStage.Ready)
                 {
@@ -165,7 +167,7 @@ namespace Volleyball
         {
             if (IsAttackJumpActive && !motor.IsJumping) IsAttackJumpActive = false;
 
-            if (motor.Team == TeamId.Human && CurrentServeStage == ServeStage.Tossed &&
+            if (UsePlayerServeControls && CurrentServeStage == ServeStage.Tossed &&
                 (TossElapsed > Settings.serveTossTimeout || !Match.Ball.IsLive))
             {
                 Match.ResetServePreparation(motor.Team);

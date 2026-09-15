@@ -113,6 +113,78 @@ namespace Volleyball.Tests
             Assert.False(OnlineSessionController.CpuShouldBeEnabled(OnlineMode.Client));
         }
 
+        [Test]
+        public void TeamAssignment_ServerOwnsTeamA_OtherClientOwnsTeamB()
+        {
+            Assert.AreEqual(TeamId.Human, OnlineGameplayRules.TeamForClient(0, 0));
+            Assert.AreEqual(TeamId.Cpu, OnlineGameplayRules.TeamForClient(1, 0));
+        }
+
+        [Test]
+        public void OwnershipValidation_RejectsAnotherConnectionsRequest()
+        {
+            Assert.True(OnlineGameplayRules.IsOwnedRequest(5, 5));
+            Assert.False(OnlineGameplayRules.IsOwnedRequest(5, 9));
+        }
+
+        [Test]
+        public void BallNetworkState_Equality_IncludesPhysicsAndServeState()
+        {
+            var first = new BallNetworkState
+            {
+                Position = new UnityEngine.Vector3(1, 2, 3),
+                Rotation = UnityEngine.Quaternion.identity,
+                Velocity = new UnityEngine.Vector3(4, 5, 6),
+                IsLive = true,
+                IsKinematic = false,
+                HitSerial = 7
+            };
+            var same = first;
+            var changed = first;
+            changed.IsLive = false;
+            Assert.True(first.Equals(same));
+            Assert.False(first.Equals(changed));
+        }
+
+        [Test]
+        public void NetworkActionPhases_AllowOnlyValidAttackLifecycle()
+        {
+            Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Receive, NetworkActionPhase.Performed));
+            Assert.False(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Receive, NetworkActionPhase.Started));
+            Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Attack, NetworkActionPhase.Started));
+            Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Attack, NetworkActionPhase.Released));
+            Assert.False(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Attack, NetworkActionPhase.Performed));
+        }
+
+        [Test]
+        public void MatchSnapshot_ClientRulesUseAuthoritativeScoresAndState()
+        {
+            var rules = new MatchRules(3);
+            rules.Synchronize(new MatchNetworkState
+            {
+                State = MatchState.PointFinished,
+                Server = TeamId.Cpu,
+                LastTouch = TeamId.Human,
+                TouchCount = 2,
+                TeamAScore = 1,
+                TeamBScore = 2,
+                TargetScore = 5
+            });
+            Assert.AreEqual(MatchState.PointFinished, rules.State);
+            Assert.AreEqual(TeamId.Cpu, rules.Server);
+            Assert.AreEqual(1, rules.HumanScore);
+            Assert.AreEqual(2, rules.CpuScore);
+            Assert.AreEqual(5, rules.TargetScore);
+        }
+
+        [Test]
+        public void OnlineRestart_OnlyHostServerCanAuthorize()
+        {
+            Assert.True(OnlineGameplayRules.CanRestart(true, true));
+            Assert.False(OnlineGameplayRules.CanRestart(false, true));
+            Assert.False(OnlineGameplayRules.CanRestart(true, false));
+        }
+
         sealed class FakeGateway : IOnlineSessionGateway
         {
             public event Action<string> Disconnected;

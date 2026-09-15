@@ -148,7 +148,7 @@ namespace Volleyball
         {
             if (Match.Rules == null) return;
             bool playing = Match.Rules.State == MatchState.Playing;
-            bool humanServe = Match.Rules.State == MatchState.ServePreparation && Match.Rules.Server == TeamId.Human;
+            bool humanServe = Match.Rules.State == MatchState.ServePreparation && Match.Rules.Server == Match.Human.Team;
             receiveButton.SetActive(playing);
             setButton.SetActive(playing);
             attackArea.SetActive(playing);

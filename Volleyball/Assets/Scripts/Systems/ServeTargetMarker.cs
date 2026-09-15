@@ -20,12 +20,12 @@ namespace Volleyball
         void LateUpdate()
         {
             if(!marker || !Match || Match.Rules==null) return;
-            bool visible=Match.Rules.State==MatchState.ServePreparation && Match.Rules.Server==TeamId.Human;
+            bool visible=Match.Rules.State==MatchState.ServePreparation && Match.Rules.Server==Match.Human.Team;
             marker.SetActive(visible);
             if(visible)
             {
                 marker.transform.position=ServeMechanics.TargetForInput(
-                    Match.Human.AimInput,TeamId.Human,Match.Settings)+Vector3.up*0.02f;
+                    Match.Human.AimInput,Match.Human.Team,Match.Settings)+Vector3.up*0.02f;
             }
         }
 

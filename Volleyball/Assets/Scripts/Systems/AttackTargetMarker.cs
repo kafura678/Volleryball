@@ -28,17 +28,16 @@ namespace Volleyball
         void LateUpdate()
         {
             if (!targetMarker || !chargeIndicator || !Match || !Match.Human) return;
-            VolleyballActions actions = Match.Human.Actions;
             bool visible = Match.Rules != null &&
                 Match.Rules.State == MatchState.Playing &&
-                actions.CurrentAttackStage == AttackStage.Charging;
+                Match.Human.CurrentAttackStage == AttackStage.Charging;
             SetVisible(visible);
             if (!visible) return;
 
-            float charge = actions.ChargeAmount;
+            float charge = Match.Human.CurrentAttackCharge;
             targetMarker.transform.position = AttackMechanics.TargetForInput(
-                actions.AttackAimInput,
-                TeamId.Human,
+                Match.Human.AimInput,
+                Match.Human.Team,
                 Match.Settings) + Vector3.up * 0.025f;
             float pulse = 0.85f + charge * 0.35f;
             targetMarker.transform.localScale = new Vector3(0.48f * pulse, 0.008f, 0.48f * pulse);

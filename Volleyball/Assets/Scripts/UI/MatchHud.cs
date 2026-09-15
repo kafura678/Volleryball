@@ -15,10 +15,16 @@ namespace Volleyball
         void Refresh()
         {
             if(Match.Rules==null) return;
-            Score.text=$"PLAYER  {Match.Rules.HumanScore}    :    {Match.Rules.CpuScore}  CPU";
+            bool online=OnlineSessionController.Instance && OnlineSessionController.Instance.Mode!=OnlineMode.Offline;
+            Score.text=online
+                ?$"TEAM A  {Match.Rules.HumanScore}    :    {Match.Rules.CpuScore}  TEAM B"
+                :$"PLAYER  {Match.Rules.HumanScore}    :    {Match.Rules.CpuScore}  CPU";
             Status.text=Match.LastMessage;
             bool finished=Match.Rules.State==MatchState.MatchFinished;ResultPanel.SetActive(finished);
-            Result.text=Match.Rules.HumanScore>=Match.Settings.winningScore?"YOU WIN":"CPU WINS";
+            Result.text=online
+                ?(Match.Rules.Winner==TeamId.Human?"TEAM A WINS":"TEAM B WINS")
+                :(Match.Rules.HumanScore>=Match.Settings.winningScore?"YOU WIN":"CPU WINS");
+            RestartButton.interactable=Match.HasMatchAuthority;
         }
     }
 }

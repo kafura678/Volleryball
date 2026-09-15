@@ -7,5 +7,6 @@
     "Unity.Services.Core",
     "Unity.Services.Authentication",
     "Unity.Services.Multiplayer"
+    ,"Unity.Collections"
   ]
 }
