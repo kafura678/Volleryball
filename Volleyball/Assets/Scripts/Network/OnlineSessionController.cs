@@ -27,7 +27,7 @@ namespace Volleyball
         public event Action Changed;
         public OnlineMode Mode => flow?.Mode ?? OnlineMode.Offline;
         public OnlineConnectionState State => flow?.State ?? OnlineConnectionState.Offline;
-        public string Status => string.IsNullOrEmpty(matchStatusOverride)
+        public string Status => State != OnlineConnectionState.Connected || string.IsNullOrEmpty(matchStatusOverride)
             ? flow?.Status ?? "Offline CPU Match"
             : matchStatusOverride;
         public string JoinCode => flow?.JoinCode ?? string.Empty;
@@ -58,7 +58,7 @@ namespace Volleyball
             }
             if (gateway is IDisposable disposable) disposable.Dispose();
             gateway = serviceGateway;
-            flow = new OnlineSessionFlow(gateway);
+            flow = new OnlineSessionFlow(gateway, StopNetworkAsync);
             flow.Changed += OnFlowChanged;
             ApplyMode();
         }
@@ -85,6 +85,17 @@ namespace Volleyball
         {
             if (!gameObject.activeSelf) gameObject.SetActive(true);
             if (flow == null) Initialize(new UnityMultiplayerSessionGateway());
+            if (NetworkManager)
+                ConfigureWebTransport(NetworkManager.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>(), WebPlatformPolicy.IsWeb);
+        }
+
+        public static void ConfigureWebTransport(Unity.Netcode.Transports.UTP.UnityTransport transport, bool web)
+        {
+            if (transport && web)
+            {
+                transport.UseWebSockets = true;
+                if (Debug.isDebugBuild) Debug.Log("Online Web transport: WSS / WebSocket");
+            }
         }
 
         void OnFlowChanged()
@@ -96,6 +107,11 @@ namespace Volleyball
         void ApplyMode()
         {
             RebindSceneReferences();
+            if (State == OnlineConnectionState.Disconnecting)
+            {
+                SetLocalInputEnabled(false);
+                return;
+            }
             bool online = Mode != OnlineMode.Offline;
             SetCpuAvailable(!online);
 
@@ -140,6 +156,13 @@ namespace Volleyball
 
         void RestoreOfflinePlayer()
         {
+            activeMatchSynchronizer = null;
+            if (Match)
+            {
+                Match.SetNetworkAuthority(true);
+                if (Match.Ball) Match.Ball.SetSimulationAuthority(true);
+                if (Match.Cpu) Match.Cpu.Actions.UsePlayerServeControls = false;
+            }
             if (!Match || !Match.Human || Match.Human.Motor == null) return;
             Match.Human.CommandSink = null;
             Match.Human.Motor.Team = hasOriginalTeam ? originalHumanTeam : TeamId.Human;
@@ -217,17 +240,34 @@ namespace Volleyball
 
         void OnClientDisconnected(ulong clientId)
         {
+            if (Mode == OnlineMode.Client && NetworkManager && clientId == NetworkManager.LocalClientId)
+                _ = flow.HandleDisconnectAsync("Host disconnected");
             Changed?.Invoke();
         }
 
         void OnServerStopped(bool wasClient)
         {
+            if (Mode != OnlineMode.Offline) _ = flow.HandleDisconnectAsync("Network server stopped");
             Changed?.Invoke();
         }
 
         void OnClientStopped(bool wasServer)
         {
+            if (!wasServer && Mode != OnlineMode.Offline) _ = flow.HandleDisconnectAsync("Host disconnected");
             Changed?.Invoke();
+        }
+
+        async Task StopNetworkAsync()
+        {
+            if (NetworkManager)
+            {
+                if (NetworkManager.IsListening && !NetworkManager.ShutdownInProgress)
+                    NetworkManager.Shutdown();
+                while (NetworkManager && (NetworkManager.IsListening || NetworkManager.ShutdownInProgress))
+                    await Task.Yield();
+            }
+            activeMatchSynchronizer = null;
+            localNetworkPlayer = null;
         }
 
         void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -247,7 +287,7 @@ namespace Volleyball
             if (!MobileInput) MobileInput = FindFirstObjectByType<MobileInputController>();
         }
 
-        public int ConnectedPlayerCount => NetworkManager && NetworkManager.IsListening
+        public int ConnectedPlayerCount => Mode != OnlineMode.Offline && State != OnlineConnectionState.Disconnecting && NetworkManager && NetworkManager.IsListening
             ? NetworkManager.ConnectedClientsIds.Count
             : 0;
 

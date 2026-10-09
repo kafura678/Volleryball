@@ -129,11 +129,7 @@ namespace Volleyball
         {
             if (leaving || disconnectReported) return;
             disconnectReported = true;
-            if (activeSession != null)
-            {
-                Detach(activeSession);
-                activeSession = null;
-            }
+            // Keep the session until the shared cleanup path calls LeaveAsync.
             Disconnected?.Invoke(reason);
         }
 

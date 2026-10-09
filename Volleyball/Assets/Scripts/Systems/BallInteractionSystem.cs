@@ -13,6 +13,7 @@ namespace Volleyball
         public Vector3 LastAttackTarget { get; private set; }
         public AttackTimingGrade LastAttackGrade { get; private set; }
         public float LastAttackCharge { get; private set; }
+        public Vector3 LastAimedActionTarget { get; private set; }
         public bool TryToss(CharacterMotor actor)
         {
             var rules=Match.Rules;
@@ -74,11 +75,10 @@ namespace Volleyball
             }
             else
             {
-                target=actor.transform.position;
-                target.z+=d*(action==ActionType.Set?1.0f:0.35f);
-                target=Court.Clamp(target,actor.Team);
-                target.z=-d*Mathf.Max(1.4f,-d*target.z);
-                target.y=action==ActionType.Set?2.4f:1.6f;
+                target=ControlAimMechanics.TargetForInput(
+                    actor.transform.position, actor.GetComponent<VolleyballActions>().AimedActionInput,
+                    actor.Team, action, Court);
+                LastAimedActionTarget=target;
                 velocity=BallTrajectory.Arc(position,target,Settings.gravity,action==ActionType.Set?Settings.setArc:Settings.receiveArc);
             }
             if(velocity.magnitude>Settings.maxBallSpeed) velocity=Vector3.ClampMagnitude(velocity,Settings.maxBallSpeed);

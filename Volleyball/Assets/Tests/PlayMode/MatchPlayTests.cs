@@ -63,6 +63,51 @@ namespace Volleyball.Tests
             Assert.Greater(match.Ball.Velocity.z,0);
             Capture("/tmp/volleyball-gameplay.png");
         }
+        [UnityTest] public IEnumerator Combination_DifferentReleaseAims_ReceiveRightSetLeftAttackDuringFreeFlight()
+        {
+            match.Human.GetComponent<PlayerInputController>().enabled=false;
+            yield return CompleteHumanServe();
+            float deadline=Time.time+20;
+            while(match.Cpu.Actions.SuccessfulHits==0 && Time.time<deadline) yield return new WaitForFixedUpdate();
+            Assert.Greater(match.Cpu.Actions.SuccessfulHits,0,"CPU returned initial serve");
+            foreach(var action in new[]{ActionType.Receive,ActionType.Set,ActionType.Attack})
+            {
+                int before=match.Human.Actions.SuccessfulHits;
+                while(before==match.Human.Actions.SuccessfulHits && Time.time<deadline && match.Rules.State==MatchState.Playing)
+                {
+                    Vector3 p=match.Ball.Body.position,v=match.Ball.Velocity;
+                    float height=action==ActionType.Receive?1.7f:action==ActionType.Set?2.5f:match.Settings.attackContactHeight+match.Settings.jumpHeight;
+                    float time=BallTrajectory.DescendingTime(p,v,match.Settings.gravity,height);
+                    if(time>=0)
+                    {
+                        var target=match.Court.Clamp(BallTrajectory.AtTime(p,v,match.Settings.gravity,time),TeamId.Human);
+                        Vector3 delta=target-match.Human.transform.position;delta.y=0;
+                        match.Human.Move(Vector3.ClampMagnitude(delta/0.25f,1));
+                        if(action==ActionType.Attack)
+                        {
+                            if(!match.Human.Actions.IsAttackInProgress && time<match.Settings.attackPerfectTime+0.04f)
+                                match.Human.AttackStarted(Vector2.zero);
+                            if(match.Human.Actions.CurrentAttackStage==AttackStage.Charging &&
+                                match.Human.Actions.AttackElapsed>=match.Settings.attackPerfectTime)
+                                match.Human.AttackReleased(Vector2.zero);
+                        }
+                        else
+                        {
+                            Vector2 aim=action==ActionType.Receive ? Vector2.right : Vector2.left;
+                            if(time<.4f && !match.Human.Actions.AimedAction.HasValue)
+                                match.Human.AimedActionStarted(action,Vector2.zero);
+                            match.Human.AimedActionHeld(action,aim);
+                            if(time<.15f) match.Human.AimedActionReleased(action,aim);
+                        }
+                    }
+                    yield return new WaitForFixedUpdate();
+                }
+                Assert.Greater(match.Human.Actions.SuccessfulHits,before,action+" during continuous flight");
+            }
+            Assert.AreEqual(TeamId.Human,match.Rules.LastTouch);
+            Assert.Greater(match.Ball.Velocity.z,0);
+            Capture("/tmp/polish1-combination.png");
+        }
         [UnityTest] public IEnumerator CpuVersusCommandDriver_MultipleRallies_RemainsPlayable()
         {
             match.Human.GetComponent<PlayerInputController>().enabled=false;

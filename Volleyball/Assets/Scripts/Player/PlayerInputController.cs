@@ -11,8 +11,6 @@ namespace Volleyball
 
         static readonly ActionType[] PerformedActions =
         {
-            ActionType.Receive,
-            ActionType.Set,
             ActionType.Serve
         };
 
@@ -32,6 +30,11 @@ namespace Volleyball
                 map.FindAction(action.ToString()).performed += OnAction;
             }
 
+            foreach (ActionType action in AimedActions)
+            {
+                map.FindAction(action.ToString()).started += OnAimedStarted;
+                map.FindAction(action.ToString()).canceled += OnAimedReleased;
+            }
             attackAction = map.FindAction(ActionType.Attack.ToString(), true);
             attackAction.started += OnAttackStarted;
             attackAction.canceled += OnAttackReleased;
@@ -49,10 +52,27 @@ namespace Volleyball
             Character.Move(forward * move.y + right * move.x);
             Character.Aim(move);
 
+            foreach (ActionType action in AimedActions)
+                if (map.FindAction(action.ToString()).IsPressed()) Character.AimedActionHeld(action, MobileInputMath.ScreenAimToCourtAim(move, Character.Team));
+
             if (attackAction != null && attackAction.IsPressed())
             {
                 Character.AttackHeld(move);
             }
+        }
+
+        static readonly ActionType[] AimedActions = { ActionType.Receive, ActionType.Set };
+
+        void OnAimedStarted(InputAction.CallbackContext context)
+        {
+            if (Character && System.Enum.TryParse(context.action.name, out ActionType action))
+                Character.AimedActionStarted(action, MobileInputMath.ScreenAimToCourtAim(ReadMove(), Character.Team));
+        }
+
+        void OnAimedReleased(InputAction.CallbackContext context)
+        {
+            if (Character && System.Enum.TryParse(context.action.name, out ActionType action))
+                Character.AimedActionReleased(action, MobileInputMath.ScreenAimToCourtAim(ReadMove(), Character.Team));
         }
 
         Vector2 ReadMove()
@@ -93,6 +113,11 @@ namespace Volleyball
                     attackAction.canceled -= OnAttackReleased;
                 }
 
+                foreach (ActionType action in AimedActions)
+                {
+                    map.FindAction(action.ToString()).started -= OnAimedStarted;
+                    map.FindAction(action.ToString()).canceled -= OnAimedReleased;
+                }
                 map.Disable();
             }
 
@@ -102,6 +127,7 @@ namespace Volleyball
             {
                 Character.Move(Vector3.zero);
                 Character.CancelAttack();
+                Character.Actions.CancelAimedAction();
             }
             if (ownedAsset) Destroy(ownedAsset);
         }

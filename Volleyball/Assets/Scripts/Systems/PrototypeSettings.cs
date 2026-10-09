@@ -22,6 +22,9 @@ namespace Volleyball
         [Min(0.1f)] public float setArc = 3.6f;
         [Min(0.1f)] public float serveArc = 2.6f;
         [Min(0.01f)] public float attackFlightTime = 0.85f;
+        [Header("Receive / Set direction assistance")]
+        [Min(0)] public float receiveAimStrength = 1.0f;
+        [Min(0)] public float setAimStrength = 1.4f;
         [Header("Two-step human serve")]
         [Min(0.1f)] public float serveTossSpeed = 6;
         [Min(0.1f)] public float serveTossTimeout = 1.35f;

@@ -28,6 +28,7 @@ namespace Volleyball
         {
             Rect safeArea = Screen.safeArea;
             Rect normalizedArea = Normalize(safeArea, new Vector2Int(Screen.width, Screen.height));
+            normalizedArea = WebPlatformPolicy.SafeArea(normalizedArea, WebPlatformPolicy.IsTouchBrowser);
             rectTransform.anchorMin = normalizedArea.min;
             rectTransform.anchorMax = normalizedArea.max;
             rectTransform.offsetMin = rectTransform.offsetMax = Vector2.zero;

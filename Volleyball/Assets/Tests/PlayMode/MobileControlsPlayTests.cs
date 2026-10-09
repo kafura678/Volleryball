@@ -3,6 +3,8 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
@@ -145,6 +147,8 @@ namespace Volleyball.Tests
             ExecuteEvents.Execute(attack.gameObject,pointer,ExecuteEvents.dragHandler);
             Assert.Greater(match.Human.Actions.AttackAimInput.x,0);
             Assert.Greater(match.Human.Actions.AttackAimInput.y,0);
+            yield return null;
+            Vector3 markerTarget=GameObject.Find("AttackTargetMarker").transform.position;
             CaptureMobileUi("/tmp/volleyball-mobile-controls.png");
             yield return new WaitForSeconds(match.Settings.attackPerfectTime-0.14f);
 
@@ -154,6 +158,8 @@ namespace Volleyball.Tests
             Assert.AreEqual(serial+1,match.Ball.HitSerial);
             Assert.AreEqual(AttackTimingGrade.Perfect,match.Human.Actions.Interaction.LastAttackGrade);
             Vector3 target=match.Human.Actions.Interaction.LastAttackTarget;
+            Assert.That(Vector3.Distance(new Vector3(markerTarget.x,0.25f,markerTarget.z),target),Is.LessThan(0.01f),
+                "Attack marker must use the same target as the final hit");
             Assert.Greater(target.x,0);Assert.Greater(target.z,3);
             Assert.That(target.x,Is.InRange(-match.Settings.halfWidth,match.Settings.halfWidth));
             Assert.That(target.z,Is.InRange(match.Settings.attackTargetMargin,match.Settings.halfLength-match.Settings.attackTargetMargin));
@@ -230,6 +236,182 @@ namespace Volleyball.Tests
             Assert.AreEqual(ServeTimingGrade.Perfect,match.Human.Actions.Interaction.LastServeGrade);
             Assert.Greater(match.Human.Actions.Interaction.LastServeTarget.x,0);
             Assert.False(mobile.IsPointerClaimed(21));Assert.False(mobile.IsPointerClaimed(22));
+        }
+
+
+        [UnityTest]
+        public IEnumerator MobileUi_TeamBSwipeUsesCourtRelativeRightAndSameServeTargetAsMarker()
+        {
+            match.Human.Motor.Team=TeamId.Cpu;
+            match.Rules.Synchronize(new MatchNetworkState
+            {
+                State=MatchState.ServePreparation,
+                Server=TeamId.Cpu,
+                LastTouch=TeamId.Human,
+                TargetScore=match.Settings.winningScore
+            });
+            match.Human.ResetForRally(match.Court.Spawn(TeamId.Cpu));
+            match.Ball.Hold(match.Human.transform.position+Vector3.up*1.25f);
+            yield return null;
+
+            MobileSwipeArea serve=FindSwipe(MobileSwipeAction.Serve);
+            Vector2 start=new Vector2(900,160);
+            PointerEventData pointer=Pointer(52,start);
+            ExecuteEvents.Execute(serve.gameObject,pointer,ExecuteEvents.pointerDownHandler);
+            pointer.position=start+Vector2.right*180;
+            ExecuteEvents.Execute(serve.gameObject,pointer,ExecuteEvents.dragHandler);
+            Assert.Less(match.Human.AimInput.x,0,"Team B visual-right swipe maps to world -X");
+            yield return null;
+            Vector3 markerTarget=GameObject.Find("ServeTargetMarker").transform.position;
+            yield return new WaitForSeconds(match.Settings.servePerfectTime);
+            ExecuteEvents.Execute(serve.gameObject,pointer,ExecuteEvents.pointerUpHandler);
+            yield return new WaitForFixedUpdate();
+
+            Vector3 target=match.Human.Actions.Interaction.LastServeTarget;
+            Assert.That(Vector3.Distance(new Vector3(markerTarget.x,0.25f,markerTarget.z),target),Is.LessThan(0.01f),
+                "Serve marker must use the same target as the final hit");
+            Assert.Less(target.x,0);
+            Assert.Less(target.z,0);
+        }
+
+        [UnityTest]
+        public IEnumerator MobileUi_ServeAndAttackReleaseCoordinates_ReachCommandSinkForEitherTeam()
+        {
+            var sink=new RecordingCommandSink();
+            match.Human.CommandSink=sink;
+            Vector2 start=new Vector2(900,160);
+            Vector2[] deltas={Vector2.zero,Vector2.left*180,Vector2.right*180,Vector2.up*180,Vector2.down*180};
+            foreach(TeamId team in new[]{TeamId.Human,TeamId.Cpu})
+            {
+                match.Human.Motor.Team=team;
+                match.Rules.Synchronize(new MatchNetworkState
+                {
+                    State=MatchState.ServePreparation,Server=team,TargetScore=match.Settings.winningScore
+                });
+                foreach(Vector2 delta in deltas)
+                {
+                    Assert.True(mobile.BeginSwipe(61,MobileSwipeAction.Serve,start));
+                    Assert.True(mobile.EndSwipe(61,start+delta));
+                    Vector2 expected=MobileInputMath.GameplayAim(start,start+delta,
+                        match.Settings.mobileSwipeDeadZone,match.Settings.mobileSwipeFullScale,team);
+                    Assert.AreEqual(expected,sink.LastAim,"Serve must use final Release coordinates");
+                    Assert.True(mobile.BeginSwipe(62,MobileSwipeAction.Attack,start));
+                    Assert.True(mobile.EndSwipe(62,start+delta));
+                    Assert.AreEqual(expected,sink.LastReleaseAim,"Attack must use the same final Release conversion");
+                }
+            }
+            match.Human.CommandSink=null;
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ReceiveSet_SwipeReleaseBothTeams_UsesFinalAimOnceAndDoesNotCharge()
+        {
+            yield return CompleteHumanServe();
+            yield return new WaitForSeconds(match.Settings.hitCooldown+.05f);
+            match.Human.GetComponent<PlayerInputController>().enabled=false;
+            foreach (TeamId team in new[] { TeamId.Human, TeamId.Cpu })
+            foreach (ActionType action in new[] { ActionType.Receive, ActionType.Set })
+            foreach (Vector2 direction in new[] { Vector2.zero, Vector2.left, Vector2.right, Vector2.up, Vector2.down })
+            {
+                match.Rules.Synchronize(new MatchNetworkState { State=MatchState.Playing, Server=team, TargetScore=5 });
+                match.Human.Motor.Team=team;
+                match.Human.ResetForRally(new Vector3(0,0,-CourtDefinition.Direction(team)*3.5f));
+                PrepareBall(action==ActionType.Receive ? 1.2f : 2.3f);
+                MobileTapButton button=FindTap(action);
+                var pointer=new PointerEventData(EventSystem.current) { pointerId=95, position=new Vector2(300,300) };
+                int serial=match.Ball.HitSerial;
+                button.OnPointerDown(pointer);
+                Assert.AreEqual(action,match.Human.Actions.AimedAction);
+                Assert.False(match.Human.Actions.IsActive);
+                Assert.Zero(match.Human.CurrentAttackCharge);
+                pointer.position+=direction*160;
+                button.OnDrag(pointer);
+                Assert.AreEqual(serial,match.Ball.HitSerial,"Holding cannot hit");
+                Vector2 aim=mobile.CurrentAim;
+                Vector3 expected=ControlAimMechanics.TargetForInput(match.Human.transform.position,aim,team,action,match.Court);
+                button.OnPointerUp(pointer);
+                button.OnPointerUp(pointer);
+                yield return new WaitForFixedUpdate();
+                Assert.AreEqual(serial+1,match.Ball.HitSerial);
+                Assert.That(Vector3.Distance(expected,match.Human.Actions.Interaction.LastAimedActionTarget),Is.LessThan(.001f));
+                Assert.IsNull(match.Human.Actions.AimedAction);
+                Assert.False(mobile.HasActiveSwipe);
+                yield return new WaitForSeconds(match.Settings.hitCooldown+.05f);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ReceiveSet_ClientCommandSink_ReceivesStartedHeldAndFinalReleaseAim()
+        {
+            var sink=new RecordingCommandSink(); match.Human.CommandSink=sink;
+            foreach (TeamId team in new[] { TeamId.Human, TeamId.Cpu })
+            foreach (MobileSwipeAction action in new[] { MobileSwipeAction.Receive, MobileSwipeAction.Set })
+            {
+                match.Human.Motor.Team=team;
+                Assert.True(mobile.BeginSwipe(96,action,Vector2.zero));
+                mobile.HoldSwipe(96,new Vector2(160,0));
+                Vector2 expected=MobileInputMath.GameplayAim(Vector2.zero,new Vector2(160,0),
+                    match.Settings.mobileSwipeDeadZone,match.Settings.mobileSwipeFullScale,team);
+                Assert.AreEqual(expected,sink.LastAim);
+                Assert.True(mobile.EndSwipe(96,new Vector2(160,0)));
+                Assert.AreEqual(expected,sink.LastReleaseAim);
+            }
+            match.Human.CommandSink=null; yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ReceiveSet_GamepadPressHoldRelease_PreservesMoveAndHitsOnRelease()
+        {
+            yield return CompleteHumanServe();
+            yield return new WaitForSeconds(match.Settings.hitCooldown+.05f);
+            var old=InputSystem.settings.backgroundBehavior;
+            var oldEditor=InputSystem.settings.editorInputBehaviorInPlayMode;
+            InputSystem.settings.backgroundBehavior=InputSettings.BackgroundBehavior.IgnoreFocus;
+            InputSystem.settings.editorInputBehaviorInPlayMode=InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            var pad=InputSystem.AddDevice<Gamepad>();
+            try
+            {
+                foreach (ActionType action in new[] { ActionType.Receive, ActionType.Set })
+                {
+                    match.Rules.Synchronize(new MatchNetworkState { State=MatchState.Playing, TargetScore=5 });
+                    match.Human.ResetForRally(new Vector3(0,0,-3.5f));
+                    PrepareBall(action==ActionType.Receive ? 1.2f : 2.3f);
+                    int serial=match.Ball.HitSerial;
+                    var held=new GamepadState {leftStick=Vector2.right}.WithButton(action==ActionType.Receive ? GamepadButton.South : GamepadButton.North);
+                    InputSystem.QueueStateEvent(pad,held); InputSystem.Update();
+                    Assert.AreEqual(action,match.Human.Actions.AimedAction);
+                    yield return new WaitForSeconds(.1f);
+                    Assert.AreEqual(serial,match.Ball.HitSerial);
+                    Assert.Greater(match.Human.Motor.MoveDirection.sqrMagnitude,0);
+                    PrepareBall(action==ActionType.Receive ? 1.2f : 2.3f);
+                    InputSystem.QueueStateEvent(pad,new GamepadState {leftStick=Vector2.right}); InputSystem.Update();
+                    yield return new WaitForFixedUpdate();
+                    Assert.AreEqual(serial+2,match.Ball.HitSerial); // PrepareBall also launches once.
+                    Assert.Greater(match.Human.Actions.Interaction.LastAimedActionTarget.x,match.Human.transform.position.x);
+                    InputSystem.QueueStateEvent(pad,new GamepadState()); InputSystem.Update();
+                    yield return new WaitForSeconds(match.Settings.hitCooldown+.05f);
+                }
+            }
+            finally { InputSystem.RemoveDevice(pad); InputSystem.settings.backgroundBehavior=old; InputSystem.settings.editorInputBehaviorInPlayMode=oldEditor; }
+        }
+
+        sealed class RecordingCommandSink : IVolleyballCommandSink
+        {
+            public ServeStage CurrentServeStage => ServeStage.Ready;
+            public AttackStage CurrentAttackStage => AttackStage.Charging;
+            public float CurrentAttackCharge => 0f;
+            public Vector2 LastAim;
+            public Vector2 LastReleaseAim;
+            public void Move(Vector3 direction) { }
+            public void Aim(Vector2 input) => LastAim=input;
+            public bool RequestAction(ActionType action) => true;
+            public bool AimedActionStarted(ActionType action, Vector2 aim) => true;
+            public void AimedActionHeld(ActionType action, Vector2 aim) => LastAim=aim;
+            public bool AimedActionReleased(ActionType action, Vector2 aim) { LastReleaseAim=aim; return true; }
+            public bool AttackStarted(Vector2 aimDirection) => true;
+            public void AttackHeld(Vector2 aimDirection) => LastAim=aimDirection;
+            public bool AttackReleased(Vector2 aimDirection) { LastReleaseAim=aimDirection;return true; }
         }
 
         IEnumerator CompleteHumanServe()

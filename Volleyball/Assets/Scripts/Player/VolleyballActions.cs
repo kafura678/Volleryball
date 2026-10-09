@@ -8,6 +8,9 @@ namespace Volleyball
         public BallInteractionSystem Interaction;
         public MatchController Match;
 
+        public ActionType? AimedAction { get; private set; }
+        public Vector2 AimedActionInput { get; private set; }
+
         CharacterMotor motor;
         ActionType current;
         float expiresAt;
@@ -42,6 +45,34 @@ namespace Volleyball
             UsePlayerServeControls = motor.Team == TeamId.Human;
         }
 
+        public bool BeginAimedAction(ActionType action, Vector2 aim)
+        {
+            if (!ControlAimMechanics.IsFinite(aim) || (action != ActionType.Receive && action != ActionType.Set) || !CanBegin(action)) return false;
+            AimedAction = action;
+            AimedActionInput = Vector2.ClampMagnitude(aim, 1f);
+            return true;
+        }
+
+        public void HoldAimedAction(ActionType action, Vector2 aim)
+        {
+            if (AimedAction == action && ControlAimMechanics.IsFinite(aim)) AimedActionInput = Vector2.ClampMagnitude(aim, 1f);
+        }
+
+        public bool ReleaseAimedAction(ActionType action, Vector2 aim)
+        {
+            if (AimedAction != action || !ControlAimMechanics.IsFinite(aim)) return false;
+            CancelAimedAction();
+            if (!Request(action)) return false;
+            AimedActionInput = Vector2.ClampMagnitude(aim, 1f);
+            return true;
+        }
+
+        public void CancelAimedAction()
+        {
+            AimedAction = null;
+            AimedActionInput = Vector2.zero;
+        }
+
         public bool Request(ActionType action)
         {
             if (action == ActionType.Attack)
@@ -73,6 +104,7 @@ namespace Volleyball
                 CurrentServeStage = ServeStage.StrikeQueued;
             }
 
+            AimedActionInput = Vector2.zero;
             current = action;
             IsActive = true;
             expiresAt = Time.time + Settings.actionWindow;
@@ -156,7 +188,7 @@ namespace Volleyball
 
         bool CanBegin(ActionType action)
         {
-            if (!Match || Match.Rules == null || Time.time < readyAt || IsActive || motor.IsJumping) return false;
+            if (!Match || Match.Rules == null || Time.time < readyAt || IsActive || AimedAction.HasValue || motor.IsJumping) return false;
             bool serve = action == ActionType.Serve;
             return serve
                 ? Match.Rules.State == MatchState.ServePreparation && Match.Rules.Server == motor.Team
@@ -174,6 +206,7 @@ namespace Volleyball
                 ResetServe();
             }
 
+            if (AimedAction.HasValue && Match.Rules.State != MatchState.Playing) CancelAimedAction();
             if (!IsActive) return;
             if (current == ActionType.Attack)
             {
@@ -249,6 +282,7 @@ namespace Volleyball
 
         public void Cancel()
         {
+            CancelAimedAction();
             IsActive = false;
             IsAttackJumpActive = false;
             expiresAt = readyAt = 0;

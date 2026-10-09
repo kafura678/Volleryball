@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Volleyball
 {
     public enum MobileControlChannel { Move, Receive, Set, Attack, Serve }
-    public enum MobileSwipeAction { Attack, Serve }
+    public enum MobileSwipeAction { Attack, Serve, Receive, Set }
 
     [DefaultExecutionOrder(100)]
     public sealed class MobileInputController : MonoBehaviour
@@ -25,8 +25,12 @@ namespace Volleyball
         MobileSwipeAction swipeAction;
 
         public Vector2 MoveInput => moveInput;
-        public Vector2 CurrentAim => MobileInputMath.SwipeAim(
-            swipeStart, swipeCurrent, Settings.mobileSwipeDeadZone, Settings.mobileSwipeFullScale);
+        public Vector2 CurrentAim => MobileInputMath.GameplayAim(
+            swipeStart,
+            swipeCurrent,
+            Settings.mobileSwipeDeadZone,
+            Settings.mobileSwipeFullScale,
+            Character ? Character.Team : TeamId.Human);
         public bool HasActiveMove => movePointer != NoPointer;
         public bool HasActiveSwipe => swipePointer != NoPointer;
 
@@ -80,15 +84,17 @@ namespace Volleyball
 
         public bool BeginSwipe(int pointerId, MobileSwipeAction action, Vector2 screenPosition)
         {
-            MobileControlChannel channel = action == MobileSwipeAction.Attack
-                ? MobileControlChannel.Attack
-                : MobileControlChannel.Serve;
+            MobileControlChannel channel = ChannelFor(action);
             if (swipePointer != NoPointer || !TryClaim(pointerId, channel)) return false;
 
             bool accepted;
             if (action == MobileSwipeAction.Attack)
             {
                 accepted = Character && Character.AttackStarted(Vector2.zero);
+            }
+            else if (action == MobileSwipeAction.Receive || action == MobileSwipeAction.Set)
+            {
+                accepted = Character && Character.AimedActionStarted(ToAction(action), Vector2.zero);
             }
             else
             {
@@ -113,6 +119,8 @@ namespace Volleyball
             swipeCurrent = screenPosition;
             Vector2 aim = CurrentAim;
             if (swipeAction == MobileSwipeAction.Attack) Character.AttackHeld(aim);
+            else if (swipeAction == MobileSwipeAction.Receive || swipeAction == MobileSwipeAction.Set)
+                Character.AimedActionHeld(ToAction(swipeAction), aim);
             else Character.Aim(aim);
         }
 
@@ -124,6 +132,8 @@ namespace Volleyball
             bool accepted;
             if (swipeAction == MobileSwipeAction.Attack)
                 accepted = Character.AttackReleased(aim);
+            else if (swipeAction == MobileSwipeAction.Receive || swipeAction == MobileSwipeAction.Set)
+                accepted = Character.AimedActionReleased(ToAction(swipeAction), aim);
             else
             {
                 Character.Aim(aim);
@@ -133,6 +143,15 @@ namespace Volleyball
             swipePointer = NoPointer;
             Release(pointerId);
             return accepted;
+        }
+
+        public void CancelSwipe(int pointerId)
+        {
+            if (!OwnsSwipe(pointerId)) return;
+            if (Character && (swipeAction == MobileSwipeAction.Receive || swipeAction == MobileSwipeAction.Set))
+                Character.Actions.CancelAimedAction();
+            swipePointer = NoPointer;
+            Release(pointerId);
         }
 
         bool BeginServe()
@@ -156,6 +175,8 @@ namespace Volleyball
             if (swipePointer == NoPointer) return;
             Vector2 aim = CurrentAim;
             if (swipeAction == MobileSwipeAction.Attack) Character.AttackHeld(aim);
+            else if (swipeAction == MobileSwipeAction.Receive || swipeAction == MobileSwipeAction.Set)
+                Character.AimedActionHeld(ToAction(swipeAction), aim);
             else Character.Aim(aim);
         }
 
@@ -182,10 +203,21 @@ namespace Volleyball
 
         bool OwnsSwipe(int pointerId)
         {
-            MobileControlChannel channel = swipeAction == MobileSwipeAction.Attack
-                ? MobileControlChannel.Attack
-                : MobileControlChannel.Serve;
+            MobileControlChannel channel = ChannelFor(swipeAction);
             return swipePointer == pointerId && Owns(pointerId, channel);
+        }
+
+        static ActionType ToAction(MobileSwipeAction action) => action == MobileSwipeAction.Receive ? ActionType.Receive : ActionType.Set;
+
+        static MobileControlChannel ChannelFor(MobileSwipeAction action)
+        {
+            switch (action)
+            {
+                case MobileSwipeAction.Receive: return MobileControlChannel.Receive;
+                case MobileSwipeAction.Set: return MobileControlChannel.Set;
+                case MobileSwipeAction.Attack: return MobileControlChannel.Attack;
+                default: return MobileControlChannel.Serve;
+            }
         }
 
         void Release(int pointerId)
@@ -198,6 +230,7 @@ namespace Volleyball
             if (Character)
             {
                 Character.Move(Vector3.zero);
+                Character.Actions.CancelAimedAction();
                 if (swipePointer != NoPointer && swipeAction == MobileSwipeAction.Attack) Character.CancelAttack();
             }
             moveInput = Vector2.zero;

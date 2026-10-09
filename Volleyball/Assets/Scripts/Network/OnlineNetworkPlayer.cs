@@ -110,6 +110,27 @@ namespace Volleyball
             return true;
         }
 
+        public bool AimedActionStarted(ActionType action, Vector2 aim)
+        {
+            return SendAimedAction(action, NetworkActionPhase.Started, aim);
+        }
+
+        public void AimedActionHeld(ActionType action, Vector2 aim) => Aim(aim);
+
+        public bool AimedActionReleased(ActionType action, Vector2 aim)
+        {
+            return SendAimedAction(action, NetworkActionPhase.Released, aim);
+        }
+
+        bool SendAimedAction(ActionType action, NetworkActionPhase phase, Vector2 aim)
+        {
+            if (!CanDriveLocalAvatar || (action != ActionType.Receive && action != ActionType.Set)) return false;
+            Aim(aim);
+            if (IsServer) return ApplyAction(action, phase, pendingAim);
+            RequestGameplayActionRpc(action, phase, pendingAim);
+            return true;
+        }
+
         public bool AttackStarted(Vector2 aimDirection)
         {
             if (!CanDriveLocalAvatar) return false;
@@ -131,7 +152,8 @@ namespace Volleyball
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
         void SubmitInputRpc(Vector3 move, Vector2 aim, RpcParams rpcParams = default)
         {
-            if (!OnlineGameplayRules.IsOwnedRequest(OwnerClientId, rpcParams.Receive.SenderClientId)) return;
+            if (!OnlineGameplayRules.IsOwnedRequest(OwnerClientId, rpcParams.Receive.SenderClientId) ||
+                !ControlAimMechanics.IsFinite(aim)) return;
             ApplyInput(
                 Vector3.ClampMagnitude(new Vector3(move.x, 0f, move.z), 1f),
                 Vector2.ClampMagnitude(aim, 1f));
@@ -145,7 +167,7 @@ namespace Volleyball
             RpcParams rpcParams = default)
         {
             if (!OnlineGameplayRules.IsOwnedRequest(OwnerClientId, rpcParams.Receive.SenderClientId) ||
-                !OnlineGameplayRules.IsActionPhaseAllowed(action, phase)) return;
+                !OnlineGameplayRules.IsActionPhaseAllowed(action, phase) || !ControlAimMechanics.IsFinite(aim)) return;
             ApplyAction(action, phase, Vector2.ClampMagnitude(aim, 1f));
         }
 
@@ -154,6 +176,8 @@ namespace Volleyball
             if (!IsServer || !authoritativeAvatar) return;
             authoritativeAvatar.ApplyMove(move);
             authoritativeAvatar.ApplyAim(aim);
+            if (authoritativeAvatar.Actions.AimedAction.HasValue)
+                authoritativeAvatar.Actions.HoldAimedAction(authoritativeAvatar.Actions.AimedAction.Value, aim);
             if (authoritativeAvatar.Actions && authoritativeAvatar.Actions.CurrentAttackStage == AttackStage.Charging)
                 authoritativeAvatar.ApplyAttackHeld(aim);
         }
@@ -162,6 +186,11 @@ namespace Volleyball
         {
             if (!IsServer || !authoritativeAvatar) return false;
             authoritativeAvatar.ApplyAim(aim);
+            if (action == ActionType.Receive || action == ActionType.Set)
+            {
+                if (phase == NetworkActionPhase.Started) return authoritativeAvatar.Actions.BeginAimedAction(action, aim);
+                if (phase == NetworkActionPhase.Released) return authoritativeAvatar.Actions.ReleaseAimedAction(action, aim);
+            }
             if (action != ActionType.Attack) return authoritativeAvatar.ApplyAction(action);
             return phase == NetworkActionPhase.Started
                 ? authoritativeAvatar.ApplyAttackStarted(aim)

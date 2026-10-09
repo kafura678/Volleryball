@@ -60,34 +60,36 @@ namespace Volleyball
         }
     }
 
-    public sealed class MobileTapButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
+    // Keep the existing component and button layout; Receive / Set now use the shared swipe lifecycle.
+    public sealed class MobileTapButton : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
     {
         public MobileInputController Input;
         public ActionType Action;
-
         int activePointer = int.MinValue;
+        MobileSwipeAction SwipeAction => Action == ActionType.Receive ? MobileSwipeAction.Receive : MobileSwipeAction.Set;
 
         public void OnPointerDown(PointerEventData eventData)
         {
-            if (!Input || activePointer != int.MinValue) return;
-            if (!Input.TapAction(eventData.pointerId, Action)) return;
+            if (!Input || activePointer != int.MinValue ||
+                !Input.BeginSwipe(eventData.pointerId, SwipeAction, eventData.position)) return;
             activePointer = eventData.pointerId;
+        }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            if (eventData.pointerId == activePointer) Input.HoldSwipe(activePointer, eventData.position);
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
-            Release(eventData.pointerId);
+            if (eventData.pointerId != activePointer) return;
+            Input.EndSwipe(activePointer, eventData.position);
+            activePointer = int.MinValue;
         }
 
-        public void OnPointerExit(PointerEventData eventData)
+        void OnDisable()
         {
-            if (eventData.pointerId == activePointer && !eventData.eligibleForClick) Release(eventData.pointerId);
-        }
-
-        void Release(int pointerId)
-        {
-            if (pointerId != activePointer) return;
-            Input.EndTap(pointerId, Action);
+            if (Input && activePointer != int.MinValue) Input.CancelSwipe(activePointer);
             activePointer = int.MinValue;
         }
     }

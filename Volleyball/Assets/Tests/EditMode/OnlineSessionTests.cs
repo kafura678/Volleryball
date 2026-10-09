@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using Unity.Collections;
+using Unity.Netcode;
 
 namespace Volleyball.Tests
 {
@@ -98,6 +100,65 @@ namespace Volleyball.Tests
         }
 
         [Test]
+        public async Task Cleanup_RepeatedNotifications_LeavesOnceAndCanHostAndJoinAgain()
+        {
+            var gateway = new FakeGateway { LeaveCompletion = new TaskCompletionSource<bool>() };
+            int stops = 0;
+            using var flow = new OnlineSessionFlow(gateway, () => { stops++; return Task.CompletedTask; });
+            Assert.True(await flow.JoinAsync("OLD123"));
+            Task first = flow.HandleDisconnectAsync("Host disconnected");
+            Task second = flow.DisconnectAsync();
+            Assert.AreSame(first, second);
+            Assert.IsEmpty(flow.JoinCode);
+            Assert.True(flow.IsBusy);
+            Assert.False(await flow.HostAsync());
+            gateway.LeaveCompletion.SetResult(true);
+            await first;
+            Assert.AreEqual(1, gateway.LeaveCount);
+            Assert.AreEqual(1, stops);
+            Assert.AreEqual(OnlineMode.Offline, flow.Mode);
+            await flow.DisconnectAsync();
+            Assert.AreEqual(1, gateway.LeaveCount);
+            Assert.True(await flow.HostAsync());
+            await flow.DisconnectAsync();
+            Assert.True(await flow.JoinAsync("NEW123"));
+            Assert.AreEqual("NEW123", flow.JoinCode);
+        }
+
+        [Test]
+        public async Task Disconnect_InFlightCreate_WaitsBeforeLeaveAndCannotRestoreOldSession()
+        {
+            var gateway = new FakeGateway { HostCompletion = new TaskCompletionSource<OnlineSessionInfo>() };
+            using var flow = new OnlineSessionFlow(gateway);
+            Task<bool> host = flow.HostAsync();
+            Task cleanup = flow.DisconnectAsync();
+            Assert.False(cleanup.IsCompleted);
+            Assert.Zero(gateway.LeaveCount);
+            Assert.False(await flow.JoinAsync("NEW123"));
+            gateway.HostCompletion.SetResult(new OnlineSessionInfo("old", "OLD123"));
+            Assert.False(await host);
+            await cleanup;
+            Assert.AreEqual(1, gateway.LeaveCount);
+            Assert.AreEqual(OnlineMode.Offline, flow.Mode);
+            Assert.IsEmpty(flow.JoinCode);
+            Assert.True(await flow.JoinAsync("NEW123"));
+        }
+
+        [Test]
+        public async Task Cleanup_LeaveFailure_StillStopsNetworkAndClearsCode()
+        {
+            var gateway = new FakeGateway { LeaveError = new InvalidOperationException("leave failed") };
+            bool stopped = false;
+            using var flow = new OnlineSessionFlow(gateway, () => { stopped = true; return Task.CompletedTask; });
+            await flow.HostAsync();
+            await flow.DisconnectAsync();
+            Assert.True(stopped);
+            Assert.IsEmpty(flow.JoinCode);
+            Assert.AreEqual(OnlineMode.Offline, flow.Mode);
+            StringAssert.Contains("leave failed", flow.Status);
+        }
+
+        [Test]
         public void Ownership_OnlySpawnedOwnerCanDriveLocalAvatar()
         {
             Assert.True(OnlineNetworkPlayer.IsLocalInputAllowed(true, true));
@@ -147,10 +208,23 @@ namespace Volleyball.Tests
         }
 
         [Test]
+        public void ActionNetworkState_PreservesMobileAimDirection()
+        {
+            UnityEngine.Vector2 localAim = MobileInputMath.GameplayAim(
+                new UnityEngine.Vector2(100,100), new UnityEngine.Vector2(300,180), 24, 140, TeamId.Cpu);
+            var sent = new ActionNetworkState { Aim = localAim };
+            using var writer = new FastBufferWriter(128, Allocator.Temp);
+            writer.WriteNetworkSerializable(sent);
+            using var reader = new FastBufferReader(writer, Allocator.Temp);
+            reader.ReadNetworkSerializable(out ActionNetworkState received);
+            Assert.AreEqual(localAim, received.Aim);
+        }
+
+        [Test]
         public void NetworkActionPhases_AllowOnlyValidAttackLifecycle()
         {
             Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Receive, NetworkActionPhase.Performed));
-            Assert.False(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Receive, NetworkActionPhase.Started));
+            Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Receive, NetworkActionPhase.Started));
             Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Attack, NetworkActionPhase.Started));
             Assert.True(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Attack, NetworkActionPhase.Released));
             Assert.False(OnlineGameplayRules.IsActionPhaseAllowed(ActionType.Attack, NetworkActionPhase.Performed));
@@ -193,6 +267,9 @@ namespace Volleyball.Tests
             public Exception HostError;
             public string JoinCode;
             public int LeaveCount;
+            public TaskCompletionSource<bool> LeaveCompletion;
+            public Exception LeaveError;
+            public TaskCompletionSource<OnlineSessionInfo> HostCompletion;
 
             public Task AuthenticateAsync()
             {
@@ -203,6 +280,7 @@ namespace Volleyball.Tests
             public Task<OnlineSessionInfo> CreateHostSessionAsync()
             {
                 Calls.Add("host");
+                if (HostCompletion != null) return HostCompletion.Task;
                 return HostError == null
                     ? Task.FromResult(new OnlineSessionInfo("session", "ABC123"))
                     : Task.FromException<OnlineSessionInfo>(HostError);
@@ -218,7 +296,7 @@ namespace Volleyball.Tests
             public Task LeaveAsync()
             {
                 LeaveCount++;
-                return Task.CompletedTask;
+                return LeaveError != null ? Task.FromException(LeaveError) : LeaveCompletion?.Task ?? Task.CompletedTask;
             }
 
             public void RaiseDisconnected(string reason)

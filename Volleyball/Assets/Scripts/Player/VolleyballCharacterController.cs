@@ -63,6 +63,27 @@ namespace Volleyball
 
         public bool ApplyAction(ActionType action) => Actions.Request(action);
 
+        public bool AimedActionStarted(ActionType action, Vector2 aim)
+        {
+            AimInput = Vector2.ClampMagnitude(aim, 1f);
+            return CommandSink != null ? CommandSink.AimedActionStarted(action, AimInput)
+                : Actions.BeginAimedAction(action, AimInput);
+        }
+
+        public void AimedActionHeld(ActionType action, Vector2 aim)
+        {
+            AimInput = Vector2.ClampMagnitude(aim, 1f);
+            if (CommandSink != null) CommandSink.AimedActionHeld(action, AimInput);
+            else Actions.HoldAimedAction(action, AimInput);
+        }
+
+        public bool AimedActionReleased(ActionType action, Vector2 aim)
+        {
+            AimInput = Vector2.ClampMagnitude(aim, 1f);
+            return CommandSink != null ? CommandSink.AimedActionReleased(action, AimInput)
+                : Actions.ReleaseAimedAction(action, AimInput);
+        }
+
         public bool AttackStarted(Vector2 aimDirection)
         {
             AimInput = Vector2.ClampMagnitude(aimDirection, 1f);

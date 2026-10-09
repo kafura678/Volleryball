@@ -127,6 +127,53 @@ namespace Volleyball.Tests
             Assert.Less(Vector2.Distance(deep,Vector2.up),0.001f);
             Assert.LessOrEqual(right.magnitude,1);
         }
+        [TestCase(TeamId.Human, 1f)]
+        [TestCase(TeamId.Cpu, -1f)]
+        public void MobileSwipe_RightAndLeft_MapToPlayersCourtRelativeSides(TeamId team,float worldRight)
+        {
+            Vector2 start=new Vector2(100,100);
+            Vector2 right=MobileInputMath.GameplayAim(start,start+Vector2.right*200,24,140,team);
+            Vector2 left=MobileInputMath.GameplayAim(start,start+Vector2.left*200,24,140,team);
+            Assert.That(right.x,Is.EqualTo(worldRight).Within(0.001f));
+            Assert.That(left.x,Is.EqualTo(-worldRight).Within(0.001f));
+            Assert.That(right.y,Is.EqualTo(0).Within(0.001f));
+        }
+        [TestCase(TeamId.Human)]
+        [TestCase(TeamId.Cpu)]
+        public void MobileSwipe_UpDownAndDeadZone_MapToFarNearForEitherTeam(TeamId team)
+        {
+            Vector2 start=new Vector2(700,400);
+            Vector2 far=MobileInputMath.GameplayAim(start,start+Vector2.up*200,24,140,team);
+            Vector2 near=MobileInputMath.GameplayAim(start,start+Vector2.down*200,24,140,team);
+            Vector2 still=MobileInputMath.GameplayAim(start,start+new Vector2(12,8),24,140,team);
+            Assert.That(far.y,Is.EqualTo(1).Within(0.001f));
+            Assert.That(near.y,Is.EqualTo(-1).Within(0.001f));
+            Assert.AreEqual(Vector2.zero,still);
+        }
+        [TestCase(ScreenOrientation.LandscapeLeft)]
+        [TestCase(ScreenOrientation.LandscapeRight)]
+        public void MobileSwipe_LandscapeDisplayCoordinates_KeepVisualDirections(ScreenOrientation orientation)
+        {
+            // Unity supplies display-oriented pointer coordinates for either orientation.
+            float startX=orientation==ScreenOrientation.LandscapeLeft?2432*0.7f:2432*0.3f;
+            Vector2 start=new Vector2(startX,1080*0.5f);
+            Vector2 right=MobileInputMath.GameplayAim(start,start+Vector2.right*200,24,140,TeamId.Human);
+            Vector2 far=MobileInputMath.GameplayAim(start,start+Vector2.up*200,24,140,TeamId.Human);
+            Assert.That(right.x,Is.EqualTo(1).Within(0.001f));
+            Assert.That(far.y,Is.EqualTo(1).Within(0.001f));
+        }
+        [TestCase(TeamId.Human)]
+        [TestCase(TeamId.Cpu)]
+        public void MobileSwipe_ServeAndAttackTargetsUseSameCourtAim(TeamId team)
+        {
+            var settings=ScriptableObject.CreateInstance<PrototypeSettings>();
+            Vector2 aim=MobileInputMath.GameplayAim(Vector2.zero,new Vector2(180,120),24,140,team);
+            Vector3 serve=ServeMechanics.TargetForInput(aim,team,settings);
+            Vector3 attack=AttackMechanics.TargetForInput(aim,team,settings);
+            Assert.That(serve.x,Is.EqualTo(attack.x).Within(0.001f));
+            Assert.That(serve.z,Is.EqualTo(attack.z).Within(0.001f));
+            Object.DestroyImmediate(settings);
+        }
         [Test] public void SafeArea_LandscapeNotch_NormalizesAndClampsAnchors()
         {
             Rect normalized=SafeAreaFitter.Normalize(new Rect(80,20,2440,1060),new Vector2Int(2532,1170));

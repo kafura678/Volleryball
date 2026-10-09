@@ -16,6 +16,8 @@ namespace Volleyball
 
         public static bool IsActionPhaseAllowed(ActionType action, NetworkActionPhase phase)
         {
+            if (action == ActionType.Receive || action == ActionType.Set)
+                return phase == NetworkActionPhase.Performed || phase == NetworkActionPhase.Started || phase == NetworkActionPhase.Released;
             return action == ActionType.Attack
                 ? phase == NetworkActionPhase.Started || phase == NetworkActionPhase.Released
                 : phase == NetworkActionPhase.Performed;

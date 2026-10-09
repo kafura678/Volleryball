@@ -20,7 +20,8 @@ namespace Volleyball
         void Start()
         {
             if (!Match || !Input) return;
-            bool show = Application.isMobilePlatform || (Application.isEditor && ShowMobileControlsInEditor);
+            bool show = WebPlatformPolicy.ShowControls(WebPlatformPolicy.IsWeb, WebPlatformPolicy.IsTouchBrowser,
+                Application.isMobilePlatform, Application.isEditor, ShowMobileControlsInEditor);
             if (!show) return;
             EnsureInputSystemEventSystem();
             BuildUi();

@@ -44,11 +44,16 @@ namespace Volleyball
     public sealed class OnlineSessionFlow : IDisposable
     {
         readonly IOnlineSessionGateway gateway;
+        readonly Func<Task> stopNetwork;
         bool busy;
+        Task cleanupTask;
+        TaskCompletionSource<bool> connectionCompletion;
+        int connectionVersion;
 
-        public OnlineSessionFlow(IOnlineSessionGateway gateway)
+        public OnlineSessionFlow(IOnlineSessionGateway gateway, Func<Task> stopNetwork = null)
         {
             this.gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
+            this.stopNetwork = stopNetwork;
             gateway.Disconnected += OnGatewayDisconnected;
         }
 
@@ -67,6 +72,7 @@ namespace Volleyball
 
         public Task<bool> JoinAsync(string joinCode)
         {
+            if (busy || IsOnline) return Task.FromResult(false);
             string normalized = NormalizeJoinCode(joinCode);
             if (string.IsNullOrEmpty(normalized))
             {
@@ -81,16 +87,24 @@ namespace Volleyball
         {
             if (busy || State == OnlineConnectionState.Connected) return false;
             busy = true;
+            int version = ++connectionVersion;
+            var connecting = new TaskCompletionSource<bool>();
+            connectionCompletion = connecting;
             Set(requestedMode, OnlineConnectionState.Authenticating, "Signing in anonymously...", string.Empty);
             try
             {
                 await gateway.AuthenticateAsync();
+                if (version != connectionVersion) return false;
                 Set(requestedMode, OnlineConnectionState.Connecting,
                     requestedMode == OnlineMode.Host ? "Creating Relay session..." : "Joining Relay session...",
                     string.Empty);
                 OnlineSessionInfo session = requestedMode == OnlineMode.Host
                     ? await gateway.CreateHostSessionAsync()
                     : await gateway.JoinSessionAsync(joinCode);
+                if (version != connectionVersion)
+                {
+                    return false;
+                }
                 Set(requestedMode, OnlineConnectionState.Connected,
                     requestedMode == OnlineMode.Host ? "Hosting - share the Join Code" : "Connected to Host",
                     session.JoinCode);
@@ -98,6 +112,8 @@ namespace Volleyball
             }
             catch (Exception exception)
             {
+                if (version != connectionVersion) return false;
+                Set(requestedMode, OnlineConnectionState.Disconnecting, "Cleaning up failed connection...", string.Empty);
                 await SafeLeaveAsync();
                 Set(OnlineMode.Offline, OnlineConnectionState.Error,
                     "Connection failed: " + FriendlyMessage(exception), string.Empty);
@@ -105,30 +121,73 @@ namespace Volleyball
             }
             finally
             {
-                busy = false;
-                Changed?.Invoke();
+                if (ReferenceEquals(connectionCompletion, connecting)) connectionCompletion = null;
+                connecting.TrySetResult(true);
+                if (version == connectionVersion)
+                {
+                    busy = false;
+                    Changed?.Invoke();
+                }
             }
         }
 
-        public async Task DisconnectAsync()
+        public Task DisconnectAsync()
         {
-            if (busy) return;
+            return CleanupAsync(null);
+        }
+
+        public Task HandleDisconnectAsync(string reason)
+        {
+            if (State == OnlineConnectionState.Disconnecting && cleanupTask == null) return Task.CompletedTask;
+            if (!IsOnline && cleanupTask == null) return Task.CompletedTask;
+            return CleanupAsync(string.IsNullOrWhiteSpace(reason) ? "Connection closed" : reason);
+        }
+
+        Task CleanupAsync(string reason)
+        {
+            if (cleanupTask != null) return cleanupTask;
+            if (!IsOnline && !busy) return Task.CompletedTask;
+            // Publish the task before callbacks run, so repeated stop notifications share cleanup.
+            var completion = new TaskCompletionSource<bool>();
+            cleanupTask = completion.Task;
+            ++connectionVersion;
+            CompleteCleanupAsync(reason, completion);
+            return completion.Task;
+        }
+
+        async void CompleteCleanupAsync(string reason, TaskCompletionSource<bool> completion)
+        {
             busy = true;
-            Set(Mode, OnlineConnectionState.Disconnecting, "Disconnecting...", JoinCode);
+            Set(Mode, OnlineConnectionState.Disconnecting, "Disconnecting...", string.Empty);
+            Exception cleanupError = null;
             try
             {
+                // Wait for an in-flight MPS create/join before releasing its session.
+                if (connectionCompletion != null) await connectionCompletion.Task;
                 await gateway.LeaveAsync();
-                Set(OnlineMode.Offline, OnlineConnectionState.Offline, "Offline CPU Match", string.Empty);
             }
             catch (Exception exception)
             {
-                Set(OnlineMode.Offline, OnlineConnectionState.Error,
-                    "Disconnected with cleanup error: " + FriendlyMessage(exception), string.Empty);
+                cleanupError = exception;
             }
             finally
             {
+                try
+                {
+                    if (stopNetwork != null) await stopNetwork();
+                }
+                catch (Exception exception)
+                {
+                    cleanupError ??= exception;
+                }
                 busy = false;
-                Changed?.Invoke();
+                cleanupTask = null;
+                Set(OnlineMode.Offline,
+                    cleanupError != null || reason != null ? OnlineConnectionState.Error : OnlineConnectionState.Offline,
+                    cleanupError != null ? "Disconnected with cleanup error: " + FriendlyMessage(cleanupError)
+                        : reason != null ? "Disconnected: " + reason : "Disconnected - Offline CPU Match",
+                    string.Empty);
+                completion.TrySetResult(true);
             }
         }
 
@@ -142,14 +201,16 @@ namespace Volleyball
             {
                 // The original connection error is more useful than a secondary cleanup error.
             }
+            finally
+            {
+                if (stopNetwork != null) await stopNetwork();
+            }
         }
 
         void OnGatewayDisconnected(string reason)
         {
             if (State == OnlineConnectionState.Disconnecting || Mode == OnlineMode.Offline) return;
-            busy = false;
-            string message = string.IsNullOrWhiteSpace(reason) ? "Connection closed" : reason;
-            Set(OnlineMode.Offline, OnlineConnectionState.Error, message, string.Empty);
+            _ = HandleDisconnectAsync(reason);
         }
 
         void Set(OnlineMode mode, OnlineConnectionState state, string status, string joinCode)

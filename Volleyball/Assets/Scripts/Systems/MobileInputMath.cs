@@ -23,5 +23,23 @@ namespace Volleyball
             float scaledMagnitude = (magnitude - deadZone) / (fullScale - deadZone);
             return delta.normalized * Mathf.Clamp01(scaledMagnitude);
         }
+
+        // PointerEventData.position is already expressed in the current display orientation.
+        // Convert its screen-relative right/left into the player's court-relative right/left here.
+        public static Vector2 GameplayAim(
+            Vector2 start,
+            Vector2 current,
+            float deadZone,
+            float fullScale,
+            TeamId team)
+        {
+            return ScreenAimToCourtAim(SwipeAim(start, current, deadZone, fullScale), team);
+        }
+
+        public static Vector2 ScreenAimToCourtAim(Vector2 screenAim, TeamId team)
+        {
+            screenAim = Vector2.ClampMagnitude(screenAim, 1f);
+            return new Vector2(screenAim.x * CourtDefinition.Direction(team), screenAim.y);
+        }
     }
 }

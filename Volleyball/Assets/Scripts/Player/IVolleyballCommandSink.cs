@@ -10,6 +10,9 @@ namespace Volleyball
         void Move(Vector3 direction);
         void Aim(Vector2 input);
         bool RequestAction(ActionType action);
+        bool AimedActionStarted(ActionType action, Vector2 aim);
+        void AimedActionHeld(ActionType action, Vector2 aim);
+        bool AimedActionReleased(ActionType action, Vector2 aim);
         bool AttackStarted(Vector2 aimDirection);
         void AttackHeld(Vector2 aimDirection);
         bool AttackReleased(Vector2 aimDirection);

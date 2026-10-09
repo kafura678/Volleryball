@@ -15,6 +15,7 @@ namespace Volleyball
         InputField joinCodeInput;
         Text joinCodeText;
         Text statusText;
+        bool wasOnline;
 
         void Start()
         {
@@ -87,7 +88,11 @@ namespace Volleyball
         async void Join()
         {
             ResolveController();
-            if (Controller) await Controller.JoinMatchAsync(joinCodeInput.text);
+            string code = joinCodeInput.text;
+            joinCodeInput.DeactivateInputField();
+            if (UnityEngine.EventSystems.EventSystem.current)
+                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+            if (Controller) await Controller.JoinMatchAsync(code);
         }
 
         async void Disconnect()
@@ -100,6 +105,13 @@ namespace Volleyball
         {
             if (!Controller) ResolveController();
             if (!Controller || !statusText) return;
+            bool online = Controller.Mode != OnlineMode.Offline;
+            if (wasOnline && !online)
+            {
+                joinCodeInput.SetTextWithoutNotify(string.Empty);
+                panel.SetActive(true);
+            }
+            wasOnline = online;
             statusText.text = Controller.Status + (Controller.ConnectedPlayerCount > 0
                 ? "\nPlayers: " + Controller.ConnectedPlayerCount + " / 2"
                 : string.Empty);
